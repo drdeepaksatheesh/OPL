@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="software/OpenPhysiologyLab/assets/openphysiolab.png" alt="OpenPhysiologyLab logo" width="220">
+</p>
+
 # OpenPhysiologyLab
 
 **Record. Analyse. Understand.**
