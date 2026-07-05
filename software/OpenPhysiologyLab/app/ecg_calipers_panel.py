@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 
+from analysis.peak_detection import detect_ecg_r_peaks
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout,
     QGroupBox, QTextEdit, QFileDialog, QComboBox, QCheckBox
@@ -39,6 +41,10 @@ class ECGCalipersPanel(QWidget):
         self.current_display_label = "Raw"
         self.current_plot_t = None
         self.current_plot_y = None
+
+        self.detected_r_peaks = np.array([], dtype=int)
+        self.r_peak_detection_result = None
+        self.selected_peak_number = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -103,6 +109,31 @@ class ECGCalipersPanel(QWidget):
         controls_layout.addStretch(1)
         layout.addWidget(controls_group)
 
+        rpeak_group = QGroupBox("R Peak Reference")
+        rpeak_layout = QHBoxLayout(rpeak_group)
+
+        self.detect_r_btn = QPushButton("Detect R Peaks")
+        self.detect_r_btn.setToolTip(
+            "Use the same ECG R-peak detector used by Analysis as the internal beat reference."
+        )
+        self.detect_r_btn.clicked.connect(self.detect_r_peaks_clicked)
+
+        self.prev_beat_btn = QPushButton("< Previous Beat")
+        self.prev_beat_btn.clicked.connect(self.previous_beat_clicked)
+
+        self.next_beat_btn = QPushButton("Next Beat >")
+        self.next_beat_btn.clicked.connect(self.next_beat_clicked)
+
+        self.rpeak_status_label = QLabel("R peaks: not detected")
+        self.rpeak_status_label.setWordWrap(True)
+
+        rpeak_layout.addWidget(self.detect_r_btn)
+        rpeak_layout.addWidget(self.prev_beat_btn)
+        rpeak_layout.addWidget(self.next_beat_btn)
+        rpeak_layout.addWidget(self.rpeak_status_label, stretch=1)
+
+        layout.addWidget(rpeak_group)
+
         view_group = QGroupBox("Signal View")
         view_layout = QVBoxLayout(view_group)
 
@@ -117,6 +148,7 @@ class ECGCalipersPanel(QWidget):
         # allow horizontal ECG browsing, but avoid accidental vertical/pinch runaway.
         self.plot.setMouseEnabled(x=True, y=False)
         self.plot.getPlotItem().getViewBox().setMenuEnabled(False)
+        self.plot.scene().sigMouseClicked.connect(self.plot_clicked)
 
         view_layout.addWidget(self.plot, stretch=1)
 
@@ -194,6 +226,10 @@ class ECGCalipersPanel(QWidget):
 
         self.current_time_s = self.extract_time_s(rows, columns)
         self.current_channel_data = self.extract_channels(rows, columns)
+        self.detected_r_peaks = np.array([], dtype=int)
+        self.r_peak_detection_result = None
+        self.selected_peak_number = None
+        self.rpeak_status_label.setText("R peaks: not detected")
 
         if not self.current_channel_data:
             raise ValueError("No usable ch1/ch2/ch3/ch4/ch5/ch6 columns found.")
@@ -319,6 +355,12 @@ class ECGCalipersPanel(QWidget):
         self.current_plot_t = t
         self.current_plot_y = y
 
+        # Channel/filter changes invalidate previous peak indices until redetected.
+        self.detected_r_peaks = np.array([], dtype=int)
+        self.r_peak_detection_result = None
+        self.selected_peak_number = None
+        self.rpeak_status_label.setText("R peaks: not detected")
+
         self.plot.clear()
         self.plot.plot(t, y, pen=pg.mkPen("#FFC400", width=1))
         self.plot.setLabel("bottom", "Time", units="s")
@@ -344,6 +386,253 @@ class ECGCalipersPanel(QWidget):
             "The original raw.csv has not been modified.\n\n"
             "Next development stage: selected beat context view with previous, selected, and next PQRST complexes."
         )
+
+    def detect_r_peaks_clicked(self):
+        # Detect R peaks on the currently displayed signal using the shared
+        # Analysis ECG detector. This gives ECG Calipers the same internal
+        # R-peak reference as the Analysis/HRV workflow.
+        if self.current_plot_t is None or self.current_plot_y is None:
+            self.info_box.setText("Load raw.csv and display a channel before detecting R peaks.")
+            return
+
+        t = np.asarray(self.current_plot_t, dtype=float)
+        y = np.asarray(self.current_plot_y, dtype=float)
+
+        valid = np.isfinite(t) & np.isfinite(y)
+        if valid.sum() < 10:
+            self.info_box.setText("Not enough valid samples for R peak detection.")
+            return
+
+        t = t[valid]
+        y = y[valid]
+
+        fs = self.estimate_fs(t)
+
+        try:
+            result = detect_ecg_r_peaks(
+                t,
+                y,
+                fs,
+                forced_polarity="auto"
+            )
+        except Exception as e:
+            self.info_box.setText(f"R peak detection failed:\n{e}")
+            return
+
+        peaks = np.asarray(result.get("peaks", []), dtype=int)
+
+        self.r_peak_detection_result = result
+        self.detected_r_peaks = peaks
+
+        if len(peaks) == 0:
+            warning = result.get("warning") or "No R peaks detected."
+            self.rpeak_status_label.setText("R peaks: 0 detected")
+            self.info_box.setText(
+                "R peak detection completed, but no R peaks were found.\n\n"
+                f"Polarity: {result.get('polarity')}\n"
+                f"Polarity source: {result.get('polarity_source')}\n"
+                f"Warning: {warning}"
+            )
+            self.redraw_plot_with_r_peaks()
+            return
+
+        self.selected_peak_number = 0
+        self.redraw_plot_with_r_peaks()
+
+        rr = np.diff(t[peaks]) if len(peaks) >= 2 else np.asarray([], dtype=float)
+        mean_hr = 60.0 / float(np.nanmean(rr)) if len(rr) > 0 and np.nanmean(rr) > 0 else np.nan
+
+        self.rpeak_status_label.setText(
+            f"R peaks: {len(peaks)} | selected beat: 1/{len(peaks)}"
+        )
+
+        self.info_box.setText(
+            "R peaks detected using shared Analysis ECG detector.\n\n"
+            f"Peaks detected: {len(peaks)}\n"
+            f"Polarity: {result.get('polarity')}\n"
+            f"Polarity source: {result.get('polarity_source')}\n"
+            f"Estimated sampling rate: {fs:.2f} Hz\n"
+            f"Mean HR from detected RR: {mean_hr:.1f} bpm\n\n"
+            f"{self.selected_beat_context_text()}\n\n"
+            "R peaks are the internal reference for ECG Calipers. "
+            "Manual P/Q/S/J/T markers will be added later. You can click near any green R peak to select that beat."
+        )
+
+    def redraw_plot_with_r_peaks(self):
+        if self.current_plot_t is None or self.current_plot_y is None:
+            return
+
+        t = np.asarray(self.current_plot_t, dtype=float)
+        y = np.asarray(self.current_plot_y, dtype=float)
+
+        self.plot.clear()
+        self.plot.plot(t, y, pen=pg.mkPen("#FFC400", width=1))
+
+        peaks = np.asarray(self.detected_r_peaks, dtype=int)
+        valid_peaks = peaks[(peaks >= 0) & (peaks < len(t))]
+
+        if len(valid_peaks) > 0:
+            self.plot.plot(
+                t[valid_peaks],
+                y[valid_peaks],
+                pen=None,
+                symbol="o",
+                symbolSize=7,
+                symbolBrush=pg.mkBrush("#00E676"),
+                symbolPen=pg.mkPen("#00E676"),
+                name="R peaks"
+            )
+
+        if self.selected_peak_number is not None and len(valid_peaks) > 0:
+            n = int(self.selected_peak_number)
+            if 0 <= n < len(valid_peaks):
+                idx = valid_peaks[n]
+                self.plot.plot(
+                    [t[idx]],
+                    [y[idx]],
+                    pen=None,
+                    symbol="o",
+                    symbolSize=13,
+                    symbolBrush=pg.mkBrush("#FF1744"),
+                    symbolPen=pg.mkPen("#FFFFFF", width=1),
+                    name="Selected R"
+                )
+
+        self.plot.getPlotItem().setTitle(
+            f"ECG Calipers: {self.channel_box.currentText()} | {self.current_display_label}"
+        )
+        self.apply_timebase_limits(t, y)
+
+    def plot_clicked(self, event):
+        """
+        Click near any detected R peak to select the nearest beat.
+
+        This is for navigation only. The automatic R peaks remain the internal
+        reference; the click simply chooses which detected beat is selected.
+        """
+        if len(self.detected_r_peaks) == 0:
+            return
+
+        if self.current_plot_t is None:
+            return
+
+        try:
+            scene_pos = event.scenePos()
+            view_box = self.plot.getPlotItem().getViewBox()
+
+            if not view_box.sceneBoundingRect().contains(scene_pos):
+                return
+
+            mouse_point = view_box.mapSceneToView(scene_pos)
+            clicked_time = float(mouse_point.x())
+
+            t = np.asarray(self.current_plot_t, dtype=float)
+            peaks = np.asarray(self.detected_r_peaks, dtype=int)
+            valid_peaks = peaks[(peaks >= 0) & (peaks < len(t))]
+
+            if len(valid_peaks) == 0:
+                return
+
+            peak_times = t[valid_peaks]
+            nearest = int(np.nanargmin(np.abs(peak_times - clicked_time)))
+
+            # Store index in the same order used by detected_r_peaks.
+            self.selected_peak_number = nearest
+
+            self.redraw_plot_with_r_peaks()
+            self.update_selected_beat_status()
+
+            event.accept()
+
+        except Exception as e:
+            self.info_box.setText(f"Could not select nearest R peak:\n{e}")
+
+    def previous_beat_clicked(self):
+        if len(self.detected_r_peaks) == 0:
+            self.info_box.setText("Detect R peaks first.")
+            return
+
+        if self.selected_peak_number is None:
+            self.selected_peak_number = 0
+        else:
+            self.selected_peak_number = max(0, int(self.selected_peak_number) - 1)
+
+        self.redraw_plot_with_r_peaks()
+        self.update_selected_beat_status()
+
+    def next_beat_clicked(self):
+        if len(self.detected_r_peaks) == 0:
+            self.info_box.setText("Detect R peaks first.")
+            return
+
+        if self.selected_peak_number is None:
+            self.selected_peak_number = 0
+        else:
+            self.selected_peak_number = min(
+                len(self.detected_r_peaks) - 1,
+                int(self.selected_peak_number) + 1
+            )
+
+        self.redraw_plot_with_r_peaks()
+        self.update_selected_beat_status()
+
+    def update_selected_beat_status(self):
+        if len(self.detected_r_peaks) == 0 or self.selected_peak_number is None:
+            self.rpeak_status_label.setText("R peaks: not detected")
+            return
+
+        self.rpeak_status_label.setText(
+            f"R peaks: {len(self.detected_r_peaks)} | "
+            f"selected beat: {int(self.selected_peak_number) + 1}/{len(self.detected_r_peaks)}"
+        )
+
+        self.info_box.setText(
+            "Selected R peak updated.\n\n"
+            f"{self.selected_beat_context_text()}\n\n"
+            "Click near any green R peak to select it. Next stage: zoom the display to previous-selected-next ECG complexes."
+        )
+
+    def selected_beat_context_text(self):
+        if self.current_plot_t is None:
+            return "No signal loaded."
+
+        if len(self.detected_r_peaks) == 0 or self.selected_peak_number is None:
+            return "No selected beat."
+
+        t = np.asarray(self.current_plot_t, dtype=float)
+        peaks = np.asarray(self.detected_r_peaks, dtype=int)
+        n = int(self.selected_peak_number)
+
+        if n < 0 or n >= len(peaks):
+            return "Selected beat index is out of range."
+
+        selected_idx = int(peaks[n])
+        selected_t = float(t[selected_idx])
+
+        lines = [
+            f"Selected beat: {n + 1}/{len(peaks)}",
+            f"Selected R time: {selected_t:.3f} s",
+        ]
+
+        if n > 0:
+            prev_t = float(t[int(peaks[n - 1])])
+            pre_rr_ms = (selected_t - prev_t) * 1000.0
+            lines.append(f"Previous R time: {prev_t:.3f} s")
+            lines.append(f"pre-RR interval: {pre_rr_ms:.1f} ms")
+        else:
+            lines.append("Previous R time: not available")
+            lines.append("pre-RR interval: not available")
+
+        if n < len(peaks) - 1:
+            next_t = float(t[int(peaks[n + 1])])
+            post_rr_ms = (next_t - selected_t) * 1000.0
+            lines.append(f"Next R time: {next_t:.3f} s")
+            lines.append(f"post-RR interval: {post_rr_ms:.1f} ms")
+        else:
+            lines.append("Next R time: not available")
+            lines.append("post-RR interval: not available")
+
+        return "\n".join(lines)
 
     def make_filtered_ecg(self, t, y, notch=True):
         try:
