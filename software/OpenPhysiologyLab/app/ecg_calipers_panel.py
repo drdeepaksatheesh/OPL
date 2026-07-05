@@ -46,6 +46,10 @@ class ECGCalipersPanel(QWidget):
         self.r_peak_detection_result = None
         self.selected_peak_number = None
 
+        self.baseline_value = None
+        self.baseline_set_mode = False
+        self.baseline_line = None
+
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
@@ -133,6 +137,29 @@ class ECGCalipersPanel(QWidget):
         rpeak_layout.addWidget(self.rpeak_status_label, stretch=1)
 
         layout.addWidget(rpeak_group)
+
+        baseline_group = QGroupBox("Baseline Reference")
+        baseline_layout = QHBoxLayout(baseline_group)
+
+        self.set_baseline_btn = QPushButton("Set Baseline")
+        self.set_baseline_btn.setToolTip(
+            "Click this, then click the isoelectric baseline on the ECG plot."
+        )
+        self.set_baseline_btn.clicked.connect(self.set_baseline_mode_clicked)
+
+        self.clear_baseline_btn = QPushButton("Clear Baseline")
+        self.clear_baseline_btn.clicked.connect(self.clear_baseline_clicked)
+
+        self.baseline_status_label = QLabel(
+            "Baseline: not set. Amplitudes should be measured relative to the isoelectric baseline, not y-axis zero."
+        )
+        self.baseline_status_label.setWordWrap(True)
+
+        baseline_layout.addWidget(self.set_baseline_btn)
+        baseline_layout.addWidget(self.clear_baseline_btn)
+        baseline_layout.addWidget(self.baseline_status_label, stretch=1)
+
+        layout.addWidget(baseline_group)
 
         view_group = QGroupBox("Signal View")
         view_layout = QVBoxLayout(view_group)
@@ -230,6 +257,13 @@ class ECGCalipersPanel(QWidget):
         self.r_peak_detection_result = None
         self.selected_peak_number = None
         self.rpeak_status_label.setText("R peaks: not detected")
+
+        self.baseline_value = None
+        self.baseline_set_mode = False
+        self.baseline_line = None
+        self.baseline_status_label.setText(
+            "Baseline: not set. Amplitudes should be measured relative to the isoelectric baseline, not y-axis zero."
+        )
 
         if not self.current_channel_data:
             raise ValueError("No usable ch1/ch2/ch3/ch4/ch5/ch6 columns found.")
@@ -355,14 +389,22 @@ class ECGCalipersPanel(QWidget):
         self.current_plot_t = t
         self.current_plot_y = y
 
-        # Channel/filter changes invalidate previous peak indices until redetected.
+        # Channel/filter changes invalidate previous peak indices and baseline until redetected/reset.
         self.detected_r_peaks = np.array([], dtype=int)
         self.r_peak_detection_result = None
         self.selected_peak_number = None
         self.rpeak_status_label.setText("R peaks: not detected")
 
+        self.baseline_value = None
+        self.baseline_set_mode = False
+        self.baseline_line = None
+        self.baseline_status_label.setText(
+            "Baseline: not set. Amplitudes should be measured relative to the isoelectric baseline, not y-axis zero."
+        )
+
         self.plot.clear()
         self.plot.plot(t, y, pen=pg.mkPen("#FFC400", width=1))
+        self.draw_baseline_line()
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setLabel("left", "Amplitude", units="raw units")
         self.plot.getPlotItem().setTitle(f"ECG Calipers: {ch} | {self.current_display_label}")
@@ -458,15 +500,29 @@ class ECGCalipersPanel(QWidget):
             "Manual P/Q/S/J/T markers will be added later. You can click near any green R peak to select that beat."
         )
 
-    def redraw_plot_with_r_peaks(self):
+    def redraw_plot_with_r_peaks(self, preserve_view=True):
         if self.current_plot_t is None or self.current_plot_y is None:
             return
 
         t = np.asarray(self.current_plot_t, dtype=float)
         y = np.asarray(self.current_plot_y, dtype=float)
 
+        view_box = self.plot.getPlotItem().getViewBox()
+        old_x_range = None
+        old_y_range = None
+
+        if preserve_view:
+            try:
+                old_x_range, old_y_range = view_box.viewRange()
+                old_x_range = [float(old_x_range[0]), float(old_x_range[1])]
+                old_y_range = [float(old_y_range[0]), float(old_y_range[1])]
+            except Exception:
+                old_x_range = None
+                old_y_range = None
+
         self.plot.clear()
         self.plot.plot(t, y, pen=pg.mkPen("#FFC400", width=1))
+        self.draw_baseline_line()
 
         peaks = np.asarray(self.detected_r_peaks, dtype=int)
         valid_peaks = peaks[(peaks >= 0) & (peaks < len(t))]
@@ -501,19 +557,92 @@ class ECGCalipersPanel(QWidget):
         self.plot.getPlotItem().setTitle(
             f"ECG Calipers: {self.channel_box.currentText()} | {self.current_display_label}"
         )
-        self.apply_timebase_limits(t, y)
+
+        # Keep hard navigation limits, but do not force full-recording view
+        # when the user has already zoomed into a beat.
+        self.apply_timebase_limits(t, y, set_full_view=False)
+
+        if preserve_view and old_x_range is not None and old_y_range is not None:
+            try:
+                self.plot.setXRange(old_x_range[0], old_x_range[1], padding=0)
+                self.plot.setYRange(old_y_range[0], old_y_range[1], padding=0)
+            except Exception:
+                pass
+
+    def set_baseline_mode_clicked(self):
+        if self.current_plot_t is None or self.current_plot_y is None:
+            self.info_box.setText("Load raw.csv and display a signal before setting baseline.")
+            return
+
+        self.baseline_set_mode = True
+        self.baseline_status_label.setText(
+            "Baseline set mode: click the isoelectric baseline on the ECG plot."
+        )
+        self.info_box.setText(
+            "Baseline set mode active.\n\n"
+            "Click a flat isoelectric part of the ECG trace, preferably the TP segment or PR segment.\n\n"
+            "This baseline will be used as the reference for future amplitude measurements."
+        )
+
+    def clear_baseline_clicked(self):
+        self.baseline_value = None
+        self.baseline_set_mode = False
+        self.baseline_line = None
+        self.baseline_status_label.setText(
+            "Baseline: not set. Amplitudes should be measured relative to the isoelectric baseline, not y-axis zero."
+        )
+
+        if self.current_plot_t is not None and self.current_plot_y is not None:
+            self.redraw_plot_with_r_peaks()
+
+        self.info_box.setText(
+            "Baseline reference cleared.\n\n"
+            "Set a baseline before interpreting P, R, T amplitudes or ST level."
+        )
+
+    def draw_baseline_line(self):
+        if self.baseline_value is None:
+            self.baseline_line = None
+            return
+
+        try:
+            line = pg.InfiniteLine(
+                pos=float(self.baseline_value),
+                angle=0,
+                movable=True,
+                pen=pg.mkPen("#40C4FF", width=2, style=Qt.DashLine)
+            )
+            line.setZValue(20)
+            line.sigPositionChanged.connect(self.baseline_line_moved)
+            self.plot.addItem(line)
+            self.baseline_line = line
+        except Exception:
+            self.baseline_line = None
+
+    def baseline_line_moved(self):
+        if self.baseline_line is None:
+            return
+
+        try:
+            value = float(self.baseline_line.value())
+        except Exception:
+            return
+
+        self.baseline_value = value
+        self.baseline_status_label.setText(
+            f"Baseline set at {value:.4f} raw units. Drag the blue dashed line for fine tuning."
+        )
 
     def plot_clicked(self, event):
         """
-        Click near any detected R peak to select the nearest beat.
+        Plot click behavior:
+        - If baseline-set mode is active, click sets the isoelectric baseline.
+        - Otherwise, click near any detected R peak to select the nearest beat.
 
-        This is for navigation only. The automatic R peaks remain the internal
-        reference; the click simply chooses which detected beat is selected.
+        The automatic R peaks remain the internal reference; the click only
+        chooses which detected beat is selected.
         """
-        if len(self.detected_r_peaks) == 0:
-            return
-
-        if self.current_plot_t is None:
+        if self.current_plot_t is None or self.current_plot_y is None:
             return
 
         try:
@@ -525,6 +654,25 @@ class ECGCalipersPanel(QWidget):
 
             mouse_point = view_box.mapSceneToView(scene_pos)
             clicked_time = float(mouse_point.x())
+            clicked_y = float(mouse_point.y())
+
+            if self.baseline_set_mode:
+                self.baseline_value = clicked_y
+                self.baseline_set_mode = False
+                self.baseline_status_label.setText(
+                    f"Baseline set at {clicked_y:.4f} raw units. Drag the blue dashed line for fine tuning."
+                )
+                self.redraw_plot_with_r_peaks()
+                self.info_box.setText(
+                    "Baseline reference set.\n\n"
+                    f"Baseline value: {clicked_y:.4f} raw units\n\n"
+                    "Teaching note: ECG positivity is relative to this isoelectric baseline, not necessarily the plot's y-axis zero."
+                )
+                event.accept()
+                return
+
+            if len(self.detected_r_peaks) == 0:
+                return
 
             t = np.asarray(self.current_plot_t, dtype=float)
             peaks = np.asarray(self.detected_r_peaks, dtype=int)
@@ -678,12 +826,12 @@ class ECGCalipersPanel(QWidget):
 
         return y_filt
 
-    def apply_timebase_limits(self, t, y):
+    def apply_timebase_limits(self, t, y, set_full_view=True):
         """
         Keep ECG Calipers plot navigation bounded to the recording timebase.
 
-        This avoids the pyqtgraph pinch/trackpad runaway problem where the user
-        can zoom or pan far outside the recording.
+        If set_full_view is True, reset to the full recording.
+        If False, only update limits and preserve the current zoom/pan.
         """
         if t is None or y is None:
             return
@@ -720,12 +868,13 @@ class ECGCalipersPanel(QWidget):
             maxYRange=y_span + 2 * y_pad,
         )
 
-        # Full-recording view by default, using the same time base as Recorder/Analysis.
-        self.plot.setXRange(t_min, t_max, padding=0)
-        self.plot.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
+        if set_full_view:
+            # Full-recording view by default, using the same time base as Recorder/Analysis.
+            self.plot.setXRange(t_min, t_max, padding=0)
+            self.plot.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
 
     def reset_plot_view(self):
         if self.current_plot_t is not None and self.current_plot_y is not None:
-            self.apply_timebase_limits(self.current_plot_t, self.current_plot_y)
+            self.apply_timebase_limits(self.current_plot_t, self.current_plot_y, set_full_view=True)
         else:
             self.plot.enableAutoRange()
