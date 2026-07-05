@@ -41,6 +41,7 @@ class ECGCalipersPanel(QWidget):
         self.current_display_label = "Raw"
         self.current_plot_t = None
         self.current_plot_y = None
+        self.current_template_overlay_y = None
         self.default_view_seconds = 5.0
 
         self.detected_r_peaks = np.array([], dtype=int)
@@ -48,11 +49,25 @@ class ECGCalipersPanel(QWidget):
         self.selected_peak_number = None
 
         self.baseline_value = None
+        self.save_current_baseline_to_view()
         self.baseline_set_mode = False
         self.baseline_line = None
 
         self.landmark_mode = None
         self.landmarks = {}
+
+        # Marker/baseline sets are independent per view.
+        # The teaching template is deliberately separate from raw/filtered measurements.
+        self.marker_sets = {
+            "raw": {},
+            "filtered": {},
+            "template": {},
+        }
+        self.baseline_sets = {
+            "raw": None,
+            "filtered": None,
+            "template": 0.0,
+        }
 
         layout = QVBoxLayout(self)
         layout.setSpacing(6)
@@ -113,7 +128,7 @@ class ECGCalipersPanel(QWidget):
         controls_layout.addWidget(QLabel("View"))
         self.view_box = QComboBox()
         self.view_box.setMinimumWidth(150)
-        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz"])
+        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz", "Teaching Template ECG"])
         self.view_box.currentIndexChanged.connect(self.refresh_plot)
         controls_layout.addWidget(self.view_box)
 
@@ -121,6 +136,14 @@ class ECGCalipersPanel(QWidget):
         self.notch_box.setChecked(True)
         self.notch_box.stateChanged.connect(self.refresh_plot)
         controls_layout.addWidget(self.notch_box)
+
+        self.template_overlay_box = QCheckBox("Overlay filtered")
+        self.template_overlay_box.setChecked(False)
+        self.template_overlay_box.setToolTip(
+            "In Teaching Template ECG view, overlay the filtered ECG behind the template."
+        )
+        self.template_overlay_box.stateChanged.connect(self.refresh_plot)
+        controls_layout.addWidget(self.template_overlay_box)
 
         self.reset_view_btn = QPushButton("Reset")
         self.reset_view_btn.clicked.connect(self.reset_plot_view)
@@ -354,6 +377,7 @@ class ECGCalipersPanel(QWidget):
 
         self.current_time_s = self.extract_time_s(rows, columns)
         self.current_channel_data = self.extract_channels(rows, columns)
+        self.reset_all_view_measurements()
         self.detected_r_peaks = np.array([], dtype=int)
         self.r_peak_detection_result = None
         self.selected_peak_number = None
@@ -471,14 +495,20 @@ class ECGCalipersPanel(QWidget):
     def get_trace_color(self):
         label = str(getattr(self, "current_display_label", "")).lower()
         if label.startswith("raw"):
-            return "#50C878"
-        return "#FFC400"
+            return "#50C878"  # emerald green for raw ADC
+        if label.startswith("teaching"):
+            return "#B9F6CA"  # pale OPL green for teaching template
+        return "#FFC400"      # gold for filtered ECG
+
 
     def get_y_axis_label(self):
         label = str(getattr(self, "current_display_label", "")).lower()
         if label.startswith("raw"):
             return "Amplitude (raw ADC units; not mV)"
+        if label.startswith("teaching"):
+            return "Derived teaching template (filtered ADC-count deviation; not mV)"
         return "Filtered amplitude (ADC-count deviation; not mV)"
+
 
     def get_x_range_for_refresh(self):
         if self.current_plot_t is None:
@@ -557,6 +587,20 @@ class ECGCalipersPanel(QWidget):
         local_y = y[visible]
         local_y = local_y[np.isfinite(local_y)]
 
+        key = self.get_active_view_key()
+        if key == "template" and hasattr(self, "template_overlay_box") and self.template_overlay_box.isChecked():
+            overlay_y = getattr(self, "current_template_overlay_y", None)
+            if overlay_y is not None:
+                try:
+                    overlay_y = np.asarray(overlay_y, dtype=float)
+                    if len(overlay_y) == len(y):
+                        overlay_local = overlay_y[visible]
+                        overlay_local = overlay_local[np.isfinite(overlay_local)]
+                        if len(overlay_local) > 0:
+                            local_y = np.concatenate([local_y, overlay_local])
+                except Exception:
+                    pass
+
         if len(local_y) < 3:
             local_y = y_valid
 
@@ -571,6 +615,7 @@ class ECGCalipersPanel(QWidget):
 
         if update_scroll and hasattr(self, "time_scroll"):
             self.update_time_scrollbar(x0, x1)
+
 
     def update_time_scrollbar(self, x0, x1):
         if self.current_plot_t is None or not hasattr(self, "time_scroll"):
@@ -669,7 +714,1169 @@ class ECGCalipersPanel(QWidget):
             except Exception:
                 pass
 
+    def get_active_view_key(self):
+        label = str(getattr(self, "current_display_label", "")).lower()
+        if label.startswith("raw"):
+            return "raw"
+        if label.startswith("teaching"):
+            return "template"
+        return "filtered"
+
+    def reset_all_view_measurements(self):
+        self.marker_sets = {
+            "raw": {},
+            "filtered": {},
+            "template": {},
+        }
+        self.baseline_sets = {
+            "raw": None,
+            "filtered": None,
+            "template": 0.0,
+        }
+        self.landmarks = self.marker_sets["raw"]
+        self.baseline_value = None
+        self.baseline_line = None
+        self.landmark_mode = None
+
+    def activate_view_measurements(self):
+        key = self.get_active_view_key()
+
+        if not hasattr(self, "marker_sets"):
+            self.marker_sets = {"raw": {}, "filtered": {}, "template": {}}
+        if not hasattr(self, "baseline_sets"):
+            self.baseline_sets = {"raw": None, "filtered": None, "template": 0.0}
+
+        self.landmarks = self.marker_sets.setdefault(key, {})
+
+        if key == "template":
+            self.baseline_value = 0.0
+            self.baseline_sets["template"] = 0.0
+        else:
+            self.baseline_value = self.baseline_sets.get(key)
+
+        self.baseline_line = None
+
+        if hasattr(self, "set_baseline_btn") and hasattr(self, "clear_baseline_btn"):
+            is_template = key == "template"
+            self.set_baseline_btn.setEnabled(not is_template)
+            self.clear_baseline_btn.setEnabled(not is_template)
+
+        if hasattr(self, "baseline_status_label"):
+            if key == "template":
+                self.baseline_status_label.setText("Baseline: 0 template fixed")
+            elif self.baseline_value is None:
+                self.baseline_status_label.setText("Baseline: --")
+            else:
+                self.baseline_status_label.setText(f"Baseline: {float(self.baseline_value):.4f} raw")
+
+        if hasattr(self, "p_status_label"):
+            self.update_p_measurements_status()
+
+
+    def save_current_baseline_to_view(self):
+        key = self.get_active_view_key()
+        if not hasattr(self, "baseline_sets"):
+            self.baseline_sets = {"raw": None, "filtered": None, "template": 0.0}
+
+        if key == "template":
+            self.baseline_value = 0.0
+            self.baseline_sets["template"] = 0.0
+            return
+
+        self.baseline_sets[key] = self.baseline_value
+
+
+    def make_teaching_template_ecg(self, t):
+        # Derived teaching template ECG.
+        #
+        # This is NOT a freehand cartoon and NOT a smoothed ECG.
+        # It is a teaching-only schematic generated from the filtered ECG:
+        # - R timing comes from detected R peaks.
+        # - Q/R/S/P/T peak times are estimated from filtered-signal windows.
+        # - Relative wave amplitudes are taken from the filtered signal, with
+        #   gentle guardrails so one noise spike does not dominate.
+        # - The drawn waves are clean finite teaching shapes.
+        #
+        # Therefore it remains related to the recording, while becoming easier
+        # to use for explaining PQRST waves, intervals, and segments.
+        t = np.asarray(t, dtype=float)
+        template = np.zeros_like(t, dtype=float)
+
+        if len(t) < 3:
+            return template
+
+        ch = self.channel_box.currentText() if hasattr(self, "channel_box") else "ch1"
+        raw = None
+
+        try:
+            raw = np.asarray(self.current_channel_data.get(ch, None), dtype=float)
+        except Exception:
+            raw = None
+
+        if raw is None or len(raw) != len(t):
+            return template
+
+        try:
+            filtered = self.make_filtered_ecg(
+                t,
+                raw,
+                notch=self.notch_box.isChecked() if hasattr(self, "notch_box") else True
+            )
+        except Exception:
+            filtered = raw - np.nanmedian(raw)
+
+        filtered = np.asarray(filtered, dtype=float)
+        finite = np.isfinite(t) & np.isfinite(filtered)
+
+        if finite.sum() < 10:
+            return template
+
+        t_min = float(np.nanmin(t[finite]))
+        t_max = float(np.nanmax(t[finite]))
+
+        try:
+            peaks = np.asarray(self.detected_r_peaks, dtype=int)
+            r_indices = peaks[(peaks >= 0) & (peaks < len(t))]
+        except Exception:
+            r_indices = np.asarray([], dtype=int)
+
+        if len(r_indices) == 0:
+            # If the user has not detected R peaks yet, fall back to a simple
+            # default rhythm so the view is not blank. The log/right panel still
+            # tells the user that R has not been detected.
+            fs = self.estimate_fs(t)
+            rr_s = 0.8
+            r_times = []
+            r = t_min + 0.45
+            while r <= t_max + rr_s:
+                r_times.append(r)
+                r += rr_s
+            r_indices = np.asarray([int(np.nanargmin(np.abs(t - rt))) for rt in r_times], dtype=int)
+
+        r_indices = np.asarray(sorted(set(int(x) for x in r_indices)), dtype=int)
+        r_indices = r_indices[(r_indices >= 0) & (r_indices < len(t))]
+
+        if len(r_indices) == 0:
+            return template
+
+        r_times = t[r_indices]
+
+        if len(r_times) >= 2:
+            rr_values = np.diff(r_times)
+            rr_values = rr_values[np.isfinite(rr_values) & (rr_values > 0.25) & (rr_values < 2.5)]
+            rr_default = float(np.nanmedian(rr_values)) if len(rr_values) else 0.8
+        else:
+            rr_default = 0.8
+
+        def clip_amp(value, low, high):
+            value = float(value)
+            sign = 1.0 if value >= 0 else -1.0
+            mag = abs(value)
+            mag = min(max(mag, low), high)
+            return sign * mag
+
+        def window_indices(a, b):
+            mask = finite & (t >= a) & (t <= b)
+            idx = np.where(mask)[0]
+            return idx
+
+        def local_max(a, b):
+            idx = window_indices(a, b)
+            if len(idx) == 0:
+                return None, None
+            local = filtered[idx]
+            j = int(np.nanargmax(local))
+            return int(idx[j]), float(local[j])
+
+        def local_min(a, b):
+            idx = window_indices(a, b)
+            if len(idx) == 0:
+                return None, None
+            local = filtered[idx]
+            j = int(np.nanargmin(local))
+            return int(idx[j]), float(local[j])
+
+        def add_cosine_bump(center, half_width, amp):
+            half_width = max(float(half_width), 0.001)
+            mask = np.abs(t - center) <= half_width
+            if not np.any(mask):
+                return
+            phase = (t[mask] - center) / half_width
+            template[mask] += amp * 0.5 * (1.0 + np.cos(np.pi * phase))
+
+        def add_triangle(center, half_width, amp):
+            half_width = max(float(half_width), 0.001)
+            mask = np.abs(t - center) <= half_width
+            if not np.any(mask):
+                return
+            phase = np.abs((t[mask] - center) / half_width)
+            template[mask] += amp * np.maximum(0.0, 1.0 - phase)
+
+        for i, r_idx in enumerate(r_indices):
+            r_time = float(t[r_idx])
+
+            if i > 0:
+                pre_rr = r_time - float(t[r_indices[i - 1]])
+            else:
+                pre_rr = rr_default
+
+            if i < len(r_indices) - 1:
+                post_rr = float(t[r_indices[i + 1]]) - r_time
+            else:
+                post_rr = rr_default
+
+            if not np.isfinite(pre_rr) or pre_rr <= 0.25 or pre_rr > 2.5:
+                pre_rr = rr_default
+            if not np.isfinite(post_rr) or post_rr <= 0.25 or post_rr > 2.5:
+                post_rr = rr_default
+
+            # Local baseline from pre-QRS segment.
+            base_idx = window_indices(r_time - min(0.30, 0.45 * pre_rr), r_time - 0.09)
+            if len(base_idx) >= 5:
+                baseline = float(np.nanmedian(filtered[base_idx]))
+            else:
+                baseline = 0.0
+
+            # R peak: use local max close to detected R.
+            r_peak_idx, r_value = local_max(r_time - 0.030, r_time + 0.030)
+            if r_peak_idx is None:
+                r_peak_idx = int(r_idx)
+                r_value = float(filtered[r_idx])
+
+            r_amp = float(r_value - baseline)
+            if abs(r_amp) < 1e-6:
+                r_amp = 1.0
+
+            # Use sign of R. Most ECG teaching examples are positive R.
+            r_sign = 1.0 if r_amp >= 0 else -1.0
+            r_mag = abs(r_amp)
+
+            # Q and S: local minima around R.
+            q_idx, q_val = local_min(r_time - 0.070, r_time - 0.010)
+            s_idx, s_val = local_min(r_time + 0.010, r_time + 0.090)
+
+            if q_idx is None:
+                q_time = r_time - 0.035
+                q_amp = -0.15 * r_mag * r_sign
+            else:
+                q_time = float(t[q_idx])
+                q_amp = clip_amp(q_val - baseline, 0.05 * r_mag, 0.35 * r_mag)
+
+            if s_idx is None:
+                s_time = r_time + 0.040
+                s_amp = -0.25 * r_mag * r_sign
+            else:
+                s_time = float(t[s_idx])
+                s_amp = clip_amp(s_val - baseline, 0.08 * r_mag, 0.45 * r_mag)
+
+            # P peak: search the real filtered signal before QRS.
+            p_start = r_time - min(0.36, 0.55 * pre_rr)
+            p_end = r_time - 0.085
+            p_idx, p_val = local_max(p_start, p_end)
+
+            if p_idx is None:
+                p_time = r_time - min(0.20, 0.28 * pre_rr)
+                p_amp = 0.12 * r_mag * r_sign
+            else:
+                p_time = float(t[p_idx])
+                p_amp = p_val - baseline
+                # Guardrails: preserve relation but keep teaching shape readable.
+                if abs(p_amp) < 0.03 * r_mag:
+                    p_amp = 0.08 * r_mag * r_sign
+                else:
+                    p_amp = clip_amp(p_amp, 0.04 * r_mag, 0.25 * r_mag)
+
+            # T peak: search after QRS and before next P.
+            t_start = r_time + 0.10
+            t_end = r_time + min(0.52, 0.68 * post_rr)
+            t_idx, t_val = local_max(t_start, t_end)
+
+            if t_idx is None:
+                t_time = r_time + min(0.28, 0.36 * post_rr)
+                t_amp = 0.28 * r_mag * r_sign
+            else:
+                t_time = float(t[t_idx])
+                t_amp = t_val - baseline
+                if abs(t_amp) < 0.05 * r_mag:
+                    t_amp = 0.25 * r_mag * r_sign
+                else:
+                    t_amp = clip_amp(t_amp, 0.08 * r_mag, 0.45 * r_mag)
+
+            # Finite didactic widths. These are narrower at faster rates.
+            p_half = min(0.060, max(0.035, 0.075 * pre_rr))
+            t_half = min(0.120, max(0.065, 0.145 * post_rr))
+
+            # Avoid overlap with QRS and next P.
+            qrs_left_guard = r_time - 0.075
+            if p_time + p_half > qrs_left_guard:
+                p_half = max(0.025, qrs_left_guard - p_time)
+
+            if i < len(r_indices) - 1:
+                next_r_time = float(t[r_indices[i + 1]])
+                next_p_start = next_r_time - min(0.36, 0.55 * post_rr)
+                allowed_t_half = next_p_start - t_time - 0.025
+                if allowed_t_half < t_half:
+                    t_half = max(0.050, allowed_t_half)
+
+            # Draw template in filtered ADC-count deviation units.
+            add_cosine_bump(p_time, p_half, p_amp)
+            add_triangle(q_time, 0.018, q_amp)
+            add_triangle(r_time, 0.022, r_mag * r_sign)
+            add_triangle(s_time, 0.024, s_amp)
+            add_cosine_bump(t_time, t_half, t_amp)
+
+        return template
+
+
+    def plot_current_ecg_trace(self, t, y):
+        key = self.get_active_view_key()
+
+        if key == "template":
+            show_overlay = False
+            if hasattr(self, "template_overlay_box"):
+                show_overlay = self.template_overlay_box.isChecked()
+
+            overlay_y = getattr(self, "current_template_overlay_y", None)
+            if show_overlay and overlay_y is not None:
+                try:
+                    overlay_y = np.asarray(overlay_y, dtype=float)
+                    if len(overlay_y) == len(t):
+                        self.plot.plot(
+                            t,
+                            overlay_y,
+                            pen=pg.mkPen((255, 196, 0, 110), width=1),
+                            name="Filtered ECG overlay"
+                        )
+                except Exception:
+                    pass
+
+            self.plot.plot(
+                t,
+                y,
+                pen=pg.mkPen(self.get_trace_color(), width=2),
+                name="Teaching Template ECG"
+            )
+            return
+
+        self.plot.plot(
+            t,
+            y,
+            pen=pg.mkPen(self.get_trace_color(), width=1),
+            name=getattr(self, "current_display_label", "ECG")
+        )
+
+
+    def ensure_r_peaks_for_template(self, t, filtered):
+        # Teaching Template ECG needs R peaks as anchors.
+        # If the user has not pressed Detect R yet, detect R peaks silently from
+        # the filtered ECG so the template remains related to the loaded recording.
+        try:
+            existing = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            existing = existing[(existing >= 0) & (existing < len(t))]
+            if len(existing) > 0:
+                return
+        except Exception:
+            pass
+
+        try:
+            fs = self.estimate_fs(np.asarray(t, dtype=float))
+            result = detect_ecg_r_peaks(
+                np.asarray(t, dtype=float),
+                np.asarray(filtered, dtype=float),
+                fs=fs,
+                forced_polarity="auto"
+            )
+
+            peaks = result.get("peaks", None)
+            if peaks is None:
+                peaks = result.get("r_peaks", None)
+            if peaks is None:
+                peaks = result.get("peak_indices", None)
+            if peaks is None:
+                peaks = []
+
+            peaks = np.asarray(peaks, dtype=int)
+            peaks = peaks[(peaks >= 0) & (peaks < len(t))]
+
+            self.detected_r_peaks = peaks
+
+            if len(peaks) > 0:
+                self.selected_peak_number = 0
+                if hasattr(self, "rpeak_status_label"):
+                    self.rpeak_status_label.setText(f"R: {len(peaks)} | beat 1/{len(peaks)}")
+            else:
+                if hasattr(self, "rpeak_status_label"):
+                    self.rpeak_status_label.setText("R: --")
+
+        except Exception as e:
+            if hasattr(self, "rpeak_status_label"):
+                self.rpeak_status_label.setText("R: autodetect failed")
+            try:
+                self.log_message(f"Teaching Template ECG could not auto-detect R peaks: {e}")
+            except Exception:
+                pass
+
+
+
+    def remove_template_vertical_guides(self):
+        # The shared R-marker code may draw a vertical selected-R guide line.
+        # In Teaching Template ECG this distracts from morphology, so remove
+        # vertical InfiniteLine objects after all normal drawing is done.
+        try:
+            if self.get_active_view_key() != "template":
+                return
+        except Exception:
+            return
+
+        try:
+            plot_item = self.plot.getPlotItem()
+            for item in list(plot_item.items):
+                if isinstance(item, pg.InfiniteLine):
+                    angle = getattr(item, "angle", None)
+                    try:
+                        angle_value = float(angle)
+                    except Exception:
+                        angle_value = None
+
+                    # Remove only vertical guide lines. Keep horizontal baseline
+                    # lines in other views untouched.
+                    if angle_value == 90.0:
+                        plot_item.removeItem(item)
+        except Exception:
+            pass
+
+
+    def extract_landmark_xy(self, value):
+        # Robust extraction of a plotted landmark coordinate.
+        # Accepts:
+        # - tuple/list: (time, value)
+        # - dict: time/x/t/time_s and value/y/y_raw/amplitude
+        # - pyqtgraph items with pos()
+        try:
+            if value is None:
+                return None
+
+            if isinstance(value, dict):
+                time_keys = ["time", "time_s", "t", "x", "x_s"]
+                value_keys = ["value", "y", "y_raw", "amplitude", "amp"]
+
+                x = None
+                y = None
+
+                for k in time_keys:
+                    if k in value:
+                        x = value.get(k)
+                        break
+
+                for k in value_keys:
+                    if k in value:
+                        y = value.get(k)
+                        break
+
+                if x is not None and y is not None:
+                    return float(x), float(y)
+
+            if isinstance(value, (list, tuple)) and len(value) >= 2:
+                return float(value[0]), float(value[1])
+
+            # Some pyqtgraph objects have pos() returning QPointF.
+            if hasattr(value, "pos"):
+                p = value.pos()
+                if hasattr(p, "x") and hasattr(p, "y"):
+                    return float(p.x()), float(p.y())
+
+        except Exception:
+            return None
+
+        return None
+
+    def find_template_p_landmark_xy(self, kind):
+        # Find P landmarks regardless of how the current panel stores them.
+        # kind: "onset", "peak", or "offset".
+        #
+        # The shared P-marker code already knows the points, but earlier template
+        # overlay code did not always find them because the internal key names can
+        # differ. This scanner searches common dicts and attributes.
+        kind = str(kind).lower()
+
+        key_variants = {
+            "onset": ["ponset", "p_onset", "p onset", "pstart", "p_start", "pbegin", "p_begin"],
+            "peak": ["ppeak", "p_peak", "p peak", "pmax", "p_max"],
+            "offset": ["poffset", "p_offset", "p offset", "pend", "p_end", "pstop", "p_stop"],
+        }.get(kind, [])
+
+        def normalized(s):
+            return str(s).lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        normalized_variants = [normalized(x) for x in key_variants]
+
+        def key_matches(k):
+            nk = normalized(k)
+            return any(v in nk for v in normalized_variants)
+
+        # 1. Search likely dictionaries first.
+        likely_dict_names = [
+            "landmarks",
+            "marker_sets",
+            "p_landmarks",
+            "p_markers",
+            "p_wave_markers",
+            "p_calipers",
+            "manual_markers",
+        ]
+
+        for name in likely_dict_names:
+            try:
+                obj = getattr(self, name, None)
+            except Exception:
+                obj = None
+
+            if isinstance(obj, dict):
+                # marker_sets is nested by view name.
+                dicts_to_scan = [obj]
+                try:
+                    if self.get_active_view_key() in obj and isinstance(obj[self.get_active_view_key()], dict):
+                        dicts_to_scan.insert(0, obj[self.get_active_view_key()])
+                except Exception:
+                    pass
+
+                for d in dicts_to_scan:
+                    for k, v in d.items():
+                        if key_matches(k):
+                            xy = self.extract_landmark_xy(v)
+                            if xy is not None:
+                                return xy
+
+        # 2. Search every dictionary in self.__dict__.
+        try:
+            for attr_name, obj in vars(self).items():
+                if not isinstance(obj, dict):
+                    continue
+
+                for k, v in obj.items():
+                    if key_matches(k):
+                        xy = self.extract_landmark_xy(v)
+                        if xy is not None:
+                            return xy
+
+                # Nested dictionaries.
+                for outer_k, outer_v in obj.items():
+                    if isinstance(outer_v, dict):
+                        for k, v in outer_v.items():
+                            if key_matches(k):
+                                xy = self.extract_landmark_xy(v)
+                                if xy is not None:
+                                    return xy
+        except Exception:
+            pass
+
+        # 3. Search direct attributes such as p_onset_time + p_onset_value.
+        try:
+            time_candidates = []
+            value_candidates = []
+
+            for attr_name, obj in vars(self).items():
+                n = normalized(attr_name)
+                if not any(v in n for v in normalized_variants):
+                    continue
+
+                if "time" in n or n.endswith("x") or "times" in n:
+                    time_candidates.append((attr_name, obj))
+                if "value" in n or "raw" in n or "amp" in n or n.endswith("y"):
+                    value_candidates.append((attr_name, obj))
+
+                xy = self.extract_landmark_xy(obj)
+                if xy is not None:
+                    return xy
+
+            for _, tx in time_candidates:
+                for _, vy in value_candidates:
+                    try:
+                        return float(tx), float(vy)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        return None
+
+    def remove_template_shared_p_labels(self):
+        # Shared P-marker drawing already adds green labels. In Teaching Template
+        # ECG we draw gold P labels instead, so remove the shared green P labels
+        # first to avoid duplicated green+gold text.
+        try:
+            if self.get_active_view_key() != "template":
+                return
+        except Exception:
+            return
+
+        try:
+            plot_item = self.plot.getPlotItem()
+            for item in list(plot_item.items):
+                if not isinstance(item, pg.TextItem):
+                    continue
+
+                label = ""
+                try:
+                    if hasattr(item, "textItem"):
+                        label = item.textItem.toPlainText()
+                    elif hasattr(item, "toPlainText"):
+                        label = item.toPlainText()
+                except Exception:
+                    label = ""
+
+                label_norm = str(label).strip().lower()
+                if label_norm in {
+                    "p onset", "p peak", "p offset",
+                    "ponset", "ppeak", "poffset",
+                    "p on", "p off", "p"
+                }:
+                    plot_item.removeItem(item)
+        except Exception:
+            pass
+
+    def draw_template_opal_markers(self):
+        # Teaching Template ECG marker overlay.
+        # Keep it simple and readable:
+        # - R peaks remain cyan diamonds.
+        # - Selected R remains a subtle lavender ring.
+        # - P-wave markers are gold in template view, with labels outside the icon.
+        # Raw and Filtered ECG marker styling is left unchanged.
+        try:
+            if self.get_active_view_key() != "template":
+                return
+        except Exception:
+            return
+
+        if self.current_plot_t is None or self.current_plot_y is None:
+            return
+
+        try:
+            t = np.asarray(self.current_plot_t, dtype=float)
+            y = np.asarray(self.current_plot_y, dtype=float)
+        except Exception:
+            return
+
+        if len(t) == 0 or len(y) == 0:
+            return
+
+        self.remove_template_vertical_guides()
+        self.remove_template_shared_p_labels()
+
+        # R peak markers.
+        try:
+            peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            peaks = peaks[(peaks >= 0) & (peaks < len(t))]
+
+            if len(peaks) > 0:
+                item = self.plot.plot(
+                    t[peaks],
+                    y[peaks],
+                    pen=None,
+                    symbol="d",
+                    symbolSize=15,
+                    symbolBrush=pg.mkBrush("#00E5FF"),
+                    symbolPen=pg.mkPen("#00131A", width=2),
+                    name="Template R peaks"
+                )
+                try:
+                    item.setZValue(75)
+                except Exception:
+                    pass
+
+            n = getattr(self, "selected_peak_number", None)
+            if n is not None and len(peaks) > 0:
+                n = int(n)
+                if 0 <= n < len(peaks):
+                    idx = int(peaks[n])
+                    item = self.plot.plot(
+                        [float(t[idx])],
+                        [float(y[idx])],
+                        pen=None,
+                        symbol="o",
+                        symbolSize=14,
+                        symbolBrush=pg.mkBrush(179, 136, 255, 80),
+                        symbolPen=pg.mkPen("#EDE7FF", width=2),
+                        name="Selected template R"
+                    )
+                    try:
+                        item.setZValue(85)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # P-wave landmarks in Teaching Template ECG:
+        # Use one simple gold scheme for all P markers so it is not visually busy.
+        # The label is placed above the marker, not inside it.
+        gold_brush = pg.mkBrush("#FFD54F")
+        gold_pen = pg.mkPen("#111111", width=2)
+        gold_text = "#FFE082"
+
+        p_styles = {
+            "onset": {"label": "P onset",  "symbol": "t",  "size": 15, "dy": 46},
+            "peak":  {"label": "P peak",   "symbol": "o",  "size": 15, "dy": 58},
+            "offset":{"label": "P offset", "symbol": "t1", "size": 15, "dy": 46},
+        }
+
+        try:
+            for kind, style in p_styles.items():
+                xy = self.find_template_p_landmark_xy(kind)
+                if xy is None:
+                    continue
+
+                x0, y0 = xy
+
+                item = self.plot.plot(
+                    [x0],
+                    [y0],
+                    pen=None,
+                    symbol=style["symbol"],
+                    symbolSize=style["size"],
+                    symbolBrush=gold_brush,
+                    symbolPen=gold_pen,
+                    name=f"Template P {kind}"
+                )
+                try:
+                    item.setZValue(90)
+                except Exception:
+                    pass
+
+                # Put label outside/above the marker, similar to the filtered view.
+                label_y = float(y0) + float(style["dy"])
+                label = pg.TextItem(style["label"], color=gold_text, anchor=(0.5, 1.0))
+                label.setPos(float(x0), label_y)
+                label.setZValue(95)
+                self.plot.addItem(label)
+
+        except Exception:
+            pass
+
+        self.remove_template_vertical_guides()
+
+
+    def ensure_p_marker_drag_signals(self):
+        # Connect once. This gives P markers hover + drag repositioning.
+        if getattr(self, "_p_marker_drag_connected", False):
+            return
+
+        try:
+            self.plot.scene().sigMouseMoved.connect(self.handle_p_marker_hover_drag)
+            self._p_marker_drag_connected = True
+        except Exception:
+            self._p_marker_drag_connected = False
+
+        if not hasattr(self, "hovered_p_marker"):
+            self.hovered_p_marker = None
+        if not hasattr(self, "dragging_p_marker"):
+            self.dragging_p_marker = None
+        if not hasattr(self, "selected_p_marker"):
+            self.selected_p_marker = None
+
+    def map_scene_pos_to_data(self, scene_pos):
+        try:
+            vb = self.plot.getViewBox()
+            mapped = vb.mapSceneToView(scene_pos)
+            return float(mapped.x()), float(mapped.y())
+        except Exception:
+            return None
+
+    def trace_xy_at_time(self, x_time):
+        # Keep moved markers on the currently displayed trace.
+        if self.current_plot_t is None or self.current_plot_y is None:
+            return None
+
+        try:
+            t = np.asarray(self.current_plot_t, dtype=float)
+            y = np.asarray(self.current_plot_y, dtype=float)
+            finite = np.isfinite(t) & np.isfinite(y)
+
+            if finite.sum() < 2:
+                return None
+
+            valid_idx = np.where(finite)[0]
+            nearest_local = int(np.nanargmin(np.abs(t[valid_idx] - float(x_time))))
+            idx = int(valid_idx[nearest_local])
+            return float(t[idx]), float(y[idx])
+        except Exception:
+            return None
+
+    def find_any_p_landmark_xy(self, kind):
+        # Find P landmarks across the different storage forms used while this
+        # panel has evolved. This is intentionally broad so P onset, peak, and
+        # offset can all be dragged.
+        kind = str(kind).lower()
+
+        variants = {
+            "onset": ["p_onset", "ponset", "p_start", "pstart", "p_begin", "pbegin"],
+            "peak": ["p_peak", "ppeak", "p_max", "pmax"],
+            "offset": ["p_offset", "poffset", "p_end", "pend", "p_stop", "pstop"],
+        }.get(kind, [])
+
+        def norm(s):
+            return str(s).lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        variant_norms = [norm(v) for v in variants]
+
+        def key_matches(k):
+            nk = norm(k)
+            return any(v in nk for v in variant_norms)
+
+        def xy_from_obj(obj):
+            try:
+                xy = self.extract_landmark_xy(obj)
+                if xy is not None:
+                    return xy
+            except Exception:
+                pass
+            return None
+
+        # 1. First scan the active per-view marker set.
+        try:
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets"):
+                d = self.marker_sets.get(view_key, None)
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        if key_matches(k):
+                            xy = xy_from_obj(v)
+                            if xy is not None:
+                                return xy
+        except Exception:
+            pass
+
+        # 2. Scan current landmarks dictionary.
+        try:
+            if hasattr(self, "landmarks") and isinstance(self.landmarks, dict):
+                for k, v in self.landmarks.items():
+                    if key_matches(k):
+                        xy = xy_from_obj(v)
+                        if xy is not None:
+                            return xy
+        except Exception:
+            pass
+
+        # 3. Scan all dictionaries and nested dictionaries in self.
+        try:
+            for attr_name, obj in vars(self).items():
+                if not isinstance(obj, dict):
+                    continue
+
+                for k, v in obj.items():
+                    if key_matches(k):
+                        xy = xy_from_obj(v)
+                        if xy is not None:
+                            return xy
+
+                for outer_k, outer_v in obj.items():
+                    if isinstance(outer_v, dict):
+                        for k, v in outer_v.items():
+                            if key_matches(k):
+                                xy = xy_from_obj(v)
+                                if xy is not None:
+                                    return xy
+        except Exception:
+            pass
+
+        # 4. Scan direct attributes. This catches forms like p_peak_time_s and
+        # p_peak_value if they exist.
+        try:
+            candidate_times = []
+            candidate_values = []
+
+            for attr_name, obj in vars(self).items():
+                n = norm(attr_name)
+                if not any(v in n for v in variant_norms):
+                    continue
+
+                xy = xy_from_obj(obj)
+                if xy is not None:
+                    return xy
+
+                if "time" in n or n.endswith("x") or "times" in n:
+                    candidate_times.append(obj)
+
+                if "value" in n or "raw" in n or "amp" in n or n.endswith("y"):
+                    candidate_values.append(obj)
+
+            for tx in candidate_times:
+                for vy in candidate_values:
+                    try:
+                        return float(tx), float(vy)
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        return None
+
+
+    def nearest_p_marker_kind(self, scene_pos):
+        # Return nearest P marker if the mouse is close enough in screen pixels.
+        # Use a generous tolerance because the label may overlap the marker and
+        # trackpad clicks move a few pixels during mouse-down.
+        mapped = self.map_scene_pos_to_data(scene_pos)
+        if mapped is None:
+            return None
+
+        try:
+            vb = self.plot.getViewBox()
+            candidates = []
+
+            for kind in ["onset", "peak", "offset"]:
+                xy = self.find_any_p_landmark_xy(kind)
+                if xy is None:
+                    continue
+
+                marker_scene = vb.mapViewToScene(pg.Point(float(xy[0]), float(xy[1])))
+                dx = float(marker_scene.x() - scene_pos.x())
+                dy = float(marker_scene.y() - scene_pos.y())
+                dist = (dx * dx + dy * dy) ** 0.5
+                candidates.append((dist, kind))
+
+            if not candidates:
+                return None
+
+            candidates.sort(key=lambda x: x[0])
+            best_dist, best_kind = candidates[0]
+
+            # Larger tolerance than before. This fixes cases where P peak/offset
+            # did not start dragging although hover labels were visible.
+            if best_dist <= 45:
+                return best_kind
+        except Exception:
+            return None
+
+        return None
+
+
+    def set_p_landmark_position(self, kind, x, y):
+        # Store using standard keys and also update any existing matching keys.
+        # This prevents only one marker moving when different parts of the panel
+        # use different historical names for P onset/peak/offset.
+        kind = str(kind).lower()
+        standard_key = {
+            "onset": "p_onset",
+            "peak": "p_peak",
+            "offset": "p_offset",
+        }.get(kind)
+
+        if standard_key is None:
+            return
+
+        x = float(x)
+        y = float(y)
+        value = (x, y)
+
+        if not hasattr(self, "landmarks") or self.landmarks is None:
+            self.landmarks = {}
+
+        self.landmarks[standard_key] = value
+
+        # Keep per-view marker_sets synchronized.
+        try:
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets"):
+                if view_key not in self.marker_sets or not isinstance(self.marker_sets[view_key], dict):
+                    self.marker_sets[view_key] = {}
+                self.marker_sets[view_key][standard_key] = value
+        except Exception:
+            pass
+
+        # Update common alternate key names in existing dicts.
+        variants = {
+            "onset": ["p_onset", "ponset", "p_start", "pstart", "p_begin", "pbegin"],
+            "peak": ["p_peak", "ppeak", "p_max", "pmax"],
+            "offset": ["p_offset", "poffset", "p_end", "pend", "p_stop", "pstop"],
+        }.get(kind, [])
+
+        def norm(s):
+            return str(s).lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        variant_norms = [norm(v) for v in variants]
+
+        def key_matches(k):
+            nk = norm(k)
+            return any(v in nk for v in variant_norms)
+
+        try:
+            for attr_name, obj in vars(self).items():
+                if isinstance(obj, dict):
+                    for k in list(obj.keys()):
+                        if key_matches(k):
+                            obj[k] = value
+
+                    for outer_k, outer_v in list(obj.items()):
+                        if isinstance(outer_v, dict):
+                            for k in list(outer_v.keys()):
+                                if key_matches(k):
+                                    outer_v[k] = value
+        except Exception:
+            pass
+
+        # Update common direct attributes if present.
+        try:
+            for attr_name in list(vars(self).keys()):
+                n = norm(attr_name)
+                if not any(v in n for v in variant_norms):
+                    continue
+
+                if "time" in n or n.endswith("x"):
+                    setattr(self, attr_name, x)
+                elif "value" in n or "raw" in n or n.endswith("y"):
+                    setattr(self, attr_name, y)
+        except Exception:
+            pass
+
+        self.selected_p_marker = kind
+        self.hovered_p_marker = kind
+
+        try:
+            self.update_p_measurements_status()
+        except Exception:
+            pass
+
+        try:
+            self.update_measurements_panel()
+        except Exception:
+            pass
+
+
+    def handle_p_marker_hover_drag(self, scene_pos):
+        # Hover, select, and drag-reposition P onset/peak/offset markers.
+        #
+        # Important detail:
+        # pyqtgraph's ViewBox normally treats click-drag as pan. When the mouse
+        # is near a P marker, temporarily disable ViewBox mouse panning so the
+        # drag can be used for marker repositioning instead.
+        self.ensure_p_marker_drag_signals()
+
+        try:
+            from PyQt5.QtWidgets import QApplication
+            from PyQt5.QtCore import Qt as _Qt
+        except Exception:
+            return
+
+        try:
+            inside_plot = self.plot.sceneBoundingRect().contains(scene_pos)
+        except Exception:
+            inside_plot = True
+
+        if not inside_plot:
+            self.dragging_p_marker = None
+            self.hovered_p_marker = None
+            try:
+                self.plot.getViewBox().setMouseEnabled(x=True, y=True)
+                self.plot.unsetCursor()
+            except Exception:
+                pass
+            return
+
+        try:
+            left_down = bool(QApplication.mouseButtons() & _Qt.LeftButton)
+        except Exception:
+            left_down = False
+
+        # If already dragging, keep dragging even if the pointer is no longer
+        # close to the original marker.
+        if left_down and self.dragging_p_marker is not None:
+            mapped = self.map_scene_pos_to_data(scene_pos)
+            if mapped is None:
+                return
+
+            snapped = self.trace_xy_at_time(mapped[0])
+            if snapped is None:
+                return
+
+            self.set_p_landmark_position(self.dragging_p_marker, snapped[0], snapped[1])
+
+            try:
+                self.refresh_plot()
+            except Exception:
+                try:
+                    self.redraw_plot_with_r_peaks()
+                except Exception:
+                    pass
+
+            try:
+                self.plot.getViewBox().setMouseEnabled(x=False, y=False)
+                self.plot.setCursor(_Qt.ClosedHandCursor)
+            except Exception:
+                pass
+
+            return
+
+        # Mouse button just went down. Start dragging from either the marker
+        # currently under the pointer or the marker that was hovered just before
+        # the click. This avoids the common failure where the pointer moves a few
+        # pixels during mouse-down and nearest-marker detection is lost.
+        if left_down:
+            near_kind = self.nearest_p_marker_kind(scene_pos)
+
+            if near_kind is None:
+                near_kind = getattr(self, "hovered_p_marker", None)
+
+            if near_kind is None:
+                near_kind = getattr(self, "selected_p_marker", None)
+
+            if near_kind is not None:
+                self.dragging_p_marker = near_kind
+                self.selected_p_marker = near_kind
+
+                mapped = self.map_scene_pos_to_data(scene_pos)
+                if mapped is None:
+                    return
+
+                snapped = self.trace_xy_at_time(mapped[0])
+                if snapped is None:
+                    return
+
+                self.set_p_landmark_position(self.dragging_p_marker, snapped[0], snapped[1])
+
+                try:
+                    self.refresh_plot()
+                except Exception:
+                    try:
+                        self.redraw_plot_with_r_peaks()
+                    except Exception:
+                        pass
+
+                try:
+                    self.plot.getViewBox().setMouseEnabled(x=False, y=False)
+                    self.plot.setCursor(_Qt.ClosedHandCursor)
+                except Exception:
+                    pass
+
+                return
+
+        # Mouse is not down: hover state only.
+        self.dragging_p_marker = None
+        near_kind = self.nearest_p_marker_kind(scene_pos)
+        self.hovered_p_marker = near_kind
+
+        try:
+            if near_kind is not None:
+                # Prevent plot panning from stealing the next click-drag.
+                self.plot.getViewBox().setMouseEnabled(x=False, y=False)
+                self.plot.setCursor(_Qt.OpenHandCursor)
+
+                if hasattr(self, "p_status_label"):
+                    pretty = {
+                        "onset": "P onset",
+                        "peak": "P peak",
+                        "offset": "P offset",
+                    }.get(near_kind, near_kind)
+                    self.p_status_label.setText(f"{pretty}: hover - drag to reposition")
+            else:
+                # Restore normal plot navigation away from markers.
+                self.plot.getViewBox().setMouseEnabled(x=True, y=True)
+                self.plot.unsetCursor()
+        except Exception:
+            pass
+
+
     def refresh_plot(self):
+        self.ensure_p_marker_drag_signals()
         old_x_range = self.get_x_range_for_refresh()
         if self.current_time_s is None or not self.current_channel_data:
             return
@@ -697,6 +1904,20 @@ class ECGCalipersPanel(QWidget):
             y = y_raw
             self.current_display_label = "Raw"
 
+        self.current_template_overlay_y = None
+        view_name = self.view_box.currentText() if hasattr(self, "view_box") else ""
+        if str(view_name).startswith("Teaching"):
+            raw_for_template = np.asarray(self.current_channel_data.get(ch, y), dtype=float)
+            filtered_for_template = self.make_filtered_ecg(
+                t,
+                raw_for_template,
+                notch=self.notch_box.isChecked() if hasattr(self, "notch_box") else True
+            )
+            self.current_template_overlay_y = filtered_for_template
+            self.ensure_r_peaks_for_template(t, filtered_for_template)
+            y = self.make_teaching_template_ecg(t)
+            self.current_display_label = "Teaching Template ECG"
+
         self.current_display_y = y
         self.current_plot_t = t
         self.current_plot_y = y
@@ -718,8 +1939,10 @@ class ECGCalipersPanel(QWidget):
         self.landmarks = {}
         self.p_status_label.setText("P: --")
 
+        self.activate_view_measurements()
+        self.activate_view_measurements()
         self.plot.clear()
-        self.plot.plot(t, y, pen=pg.mkPen(self.get_trace_color(), width=1))
+        self.plot_current_ecg_trace(t, y)
         self.draw_baseline_line()
         self.draw_landmark_markers()
         self.plot.setLabel("bottom", "Time", units="s")
@@ -747,6 +1970,7 @@ class ECGCalipersPanel(QWidget):
             "Next development stage: selected beat context view with previous, selected, and next PQRST complexes."
         )
         self.apply_post_refresh_window(old_x_range)
+        self.draw_template_opal_markers()
 
     def detect_r_peaks_clicked(self):
         # Detect R peaks on the currently displayed signal using the shared
@@ -822,6 +2046,7 @@ class ECGCalipersPanel(QWidget):
         )
 
     def redraw_plot_with_r_peaks(self, preserve_view=True):
+        self.ensure_p_marker_drag_signals()
         if self.current_plot_t is None or self.current_plot_y is None:
             return
 
@@ -842,7 +2067,7 @@ class ECGCalipersPanel(QWidget):
                 old_y_range = None
 
         self.plot.clear()
-        self.plot.plot(t, y, pen=pg.mkPen(self.get_trace_color(), width=1))
+        self.plot_current_ecg_trace(t, y)
         self.draw_baseline_line()
         self.draw_landmark_markers()
 
@@ -890,6 +2115,7 @@ class ECGCalipersPanel(QWidget):
                 self.plot.setYRange(old_y_range[0], old_y_range[1], padding=0)
             except Exception:
                 pass
+        self.draw_template_opal_markers()
 
     def update_measurement_summary(self):
         if not hasattr(self, "summary_box"):
@@ -901,6 +2127,18 @@ class ECGCalipersPanel(QWidget):
             lines.append(f"File: {self.current_csv_path.name}")
             lines.append(f"Channel: {self.channel_box.currentText()}")
             lines.append(f"View: {self.current_display_label}")
+            lines.append(f"Active marker set: {self.get_active_view_key()}")
+            if self.get_active_view_key() == "template":
+                lines.append("Teaching-only template; not for diagnosis/research.")
+                lines.append("")
+                lines.append("Template method:")
+                lines.append("1. Filtered ECG is used as the source signal.")
+                lines.append("2. R peaks are auto-detected if needed.")
+                lines.append("3. R timing = detected R-peak times.")
+                lines.append("4. R amplitude = local filtered R peak minus pre-QRS median baseline.")
+                lines.append("5. P/Q/S/T are finite teaching shapes placed relative to R and RR.")
+                lines.append("6. Relative amplitudes: P≈0.12R, Q≈-0.12R, S≈-0.25R, T≈0.30R.")
+                lines.append("7. Baseline is fixed at 0 template units.")
             lines.append("")
 
         if len(self.detected_r_peaks) > 0:
@@ -1063,6 +2301,15 @@ class ECGCalipersPanel(QWidget):
             self.baseline_line = None
             return
 
+        # Teaching Template ECG already has an inherent straight baseline at 0.
+        # Do not draw the blue draggable/reference baseline line in this mode.
+        try:
+            if self.get_active_view_key() == "template":
+                self.baseline_line = None
+                return
+        except Exception:
+            pass
+
         try:
             line = pg.InfiniteLine(
                 pos=float(self.baseline_value),
@@ -1077,6 +2324,7 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             self.baseline_line = None
 
+
     def baseline_line_moved(self):
         if self.baseline_line is None:
             return
@@ -1087,6 +2335,7 @@ class ECGCalipersPanel(QWidget):
             return
 
         self.baseline_value = value
+        self.save_current_baseline_to_view()
         self.baseline_status_label.setText(
             f"Baseline: {value:.4f} raw"
         )
@@ -1117,6 +2366,7 @@ class ECGCalipersPanel(QWidget):
 
             if self.baseline_set_mode:
                 self.baseline_value = clicked_y
+                self.save_current_baseline_to_view()
                 self.baseline_set_mode = False
                 self.baseline_status_label.setText(
                     f"Baseline: {clicked_y:.4f} raw"
