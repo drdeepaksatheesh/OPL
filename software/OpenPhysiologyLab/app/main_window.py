@@ -13,6 +13,7 @@ from app.analysis_panel import AnalysisPanel
 from app.results_panel import ResultsPanel
 from app.compare_panel import ComparePanel
 from app.machine_panel import MachinePanel
+from app.ecg_calipers_panel import ECGCalipersPanel
 from app.theme import build_stylesheet
 
 
@@ -33,6 +34,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.analysis_panel = AnalysisPanel()
         self.results_panel = ResultsPanel()
         self.compare_panel = ComparePanel()
+        self.ecg_calipers_panel = ECGCalipersPanel()
         try:
             self.analysis_panel.open_results_requested.connect(self.open_results_report)
         except Exception:
@@ -43,6 +45,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.tabs.addTab(self.setup_panel, "Setup")
         self.tabs.addTab(self.recorder_panel, "Recorder")
         self.tabs.addTab(self.analysis_panel, "Analysis")
+        self.tabs.addTab(self.ecg_calipers_panel, "ECG Calipers")
         self.tabs.addTab(self.results_panel, "Results")
         self.tabs.addTab(self.compare_panel, "Compare")
         self.tabs.addTab(self.machine_panel, "Machine")
