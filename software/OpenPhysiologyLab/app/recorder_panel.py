@@ -2084,20 +2084,65 @@ class RecorderPanel(QWidget):
             return 300
 
     def refresh_ports(self):
+        self.port_box.blockSignals(True)
         self.port_box.clear()
 
         ports = SerialTransport.list_ports()
 
         if len(ports) == 0:
-            self.port_box.addItem("No ports")
+            self.port_box.addItem("No ports", None)
+            self.port_box.blockSignals(False)
             self.log("No serial ports found.")
             self.update_settings_summary()
             return
 
+        likely_index = None
+
         for port in ports:
-            self.port_box.addItem(port["device"])
+            device = str(port.get("device", "")).strip()
+            description = str(port.get("description", "")).strip()
+            hwid = str(port.get("hwid", "")).strip()
+
+            combined = f"{device} {description} {hwid}".lower()
+
+            is_bluetooth = (
+                "bluetooth" in combined
+                or "bthenum" in combined
+            )
+
+            is_likely_usb_biosignal_device = (
+                "esp32" in combined
+                or "usb serial" in combined
+                or "usb jtag" in combined
+                or "vid:pid=303a" in combined
+                or "cp210" in combined
+                or "ch340" in combined
+            ) and not is_bluetooth
+
+            label = device
+
+            if description and description != device:
+                label = f"{device} - {description}"
+
+            if is_likely_usb_biosignal_device:
+                label = f"{label} [likely NPG Lite / USB serial]"
+
+            self.port_box.addItem(label, device)
+
+            if is_likely_usb_biosignal_device and likely_index is None:
+                likely_index = self.port_box.count() - 1
+
+        if likely_index is not None:
+            self.port_box.setCurrentIndex(likely_index)
+
+        self.port_box.blockSignals(False)
 
         self.log("Ports refreshed.")
+
+        if likely_index is not None:
+            selected_port = self.port_box.currentData()
+            self.log(f"Likely NPG Lite / USB serial port selected: {selected_port}")
+
         self.update_settings_summary()
 
     def update_recommendation(self):
@@ -3549,9 +3594,12 @@ class RecorderPanel(QWidget):
             self.log("Resume requested.")
 
     def start_recording(self):
-        port = self.port_box.currentText()
+        port = self.port_box.currentData()
 
-        if port == "No ports":
+        if not port:
+            port = self.port_box.currentText().split(" - ")[0].strip()
+
+        if port == "No ports" or not port:
             self.log("No COM port selected.")
             return
 
