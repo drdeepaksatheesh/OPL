@@ -237,8 +237,47 @@ class ECGCalipersPanel(QWidget):
         landmark_layout.addWidget(self.clear_p_btn)
         landmark_layout.addWidget(self.p_status_label, stretch=1)
 
-        ribbon_row_2.addWidget(baseline_group, stretch=3)
-        ribbon_row_2.addWidget(landmark_group, stretch=6)
+        qrs_group, qrs_layout = make_caliper_group("QRS / ST")
+
+        self.qrs_onset_btn = QPushButton("QRS onset")
+        self.q_nadir_btn = QPushButton("Q nadir")
+        self.s_nadir_btn = QPushButton("S nadir")
+        self.j_point_btn = QPushButton("J point")
+        self.clear_qrs_btn = QPushButton("Clear QRS")
+
+        qrs_button_style = (
+            "QPushButton {"
+            "border: 1px solid #00C853;"
+            "color: #B9F6CA;"
+            "padding: 4px 8px;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: rgba(0, 200, 83, 35);"
+            "}"
+        )
+        for btn in [self.qrs_onset_btn, self.q_nadir_btn, self.s_nadir_btn, self.j_point_btn, self.clear_qrs_btn]:
+            btn.setStyleSheet(qrs_button_style)
+
+        self.qrs_onset_btn.clicked.connect(lambda: self.set_landmark_mode("QRS onset"))
+        self.q_nadir_btn.clicked.connect(lambda: self.set_landmark_mode("Q nadir"))
+        self.s_nadir_btn.clicked.connect(lambda: self.set_landmark_mode("S nadir"))
+        self.j_point_btn.clicked.connect(lambda: self.set_landmark_mode("J point"))
+        self.clear_qrs_btn.clicked.connect(self.clear_qrs_landmarks)
+
+        self.qrs_status_label = QLabel("QRS: --")
+        self.qrs_status_label.setWordWrap(False)
+        self.qrs_status_label.setStyleSheet("color: #B9F6CA;")
+
+        qrs_layout.addWidget(self.qrs_onset_btn)
+        qrs_layout.addWidget(self.q_nadir_btn)
+        qrs_layout.addWidget(self.s_nadir_btn)
+        qrs_layout.addWidget(self.j_point_btn)
+        qrs_layout.addWidget(self.clear_qrs_btn)
+        qrs_layout.addWidget(self.qrs_status_label, stretch=1)
+
+        ribbon_row_2.addWidget(baseline_group, stretch=2)
+        ribbon_row_2.addWidget(landmark_group, stretch=4)
+        ribbon_row_2.addWidget(qrs_group, stretch=5)
 
         layout.addLayout(ribbon_row_2)
 
@@ -1742,13 +1781,106 @@ class ECGCalipersPanel(QWidget):
             pass
 
 
+    def ecg_drag_marker_specs(self):
+        return [
+            ("p:onset", "P onset"),
+            ("p:peak", "P peak"),
+            ("p:offset", "P offset"),
+            ("qrs:qrs_onset", "QRS onset"),
+            ("qrs:q_nadir", "Q nadir"),
+            ("qrs:s_nadir", "S nadir"),
+            ("qrs:j_point", "J point"),
+        ]
+
+    def ecg_drag_marker_label(self, marker_id):
+        labels = dict(self.ecg_drag_marker_specs())
+        return labels.get(marker_id, str(marker_id))
+
+    def find_ecg_drag_marker_xy(self, marker_id):
+        marker_id = str(marker_id)
+
+        if marker_id.startswith("p:"):
+            kind = marker_id.split(":", 1)[1]
+            try:
+                return self.find_any_p_landmark_xy(kind)
+            except Exception:
+                return None
+
+        if marker_id.startswith("qrs:"):
+            kind = marker_id.split(":", 1)[1]
+            try:
+                return self.get_qrs_landmark_xy(kind)
+            except Exception:
+                return None
+
+        return None
+
+    def nearest_ecg_drag_marker(self, scene_pos):
+        # Return nearest draggable ECG landmark if close enough in screen pixels.
+        try:
+            vb = self.plot.getViewBox()
+            candidates = []
+
+            for marker_id, label in self.ecg_drag_marker_specs():
+                xy = self.find_ecg_drag_marker_xy(marker_id)
+                if xy is None:
+                    continue
+
+                marker_scene = vb.mapViewToScene(pg.Point(float(xy[0]), float(xy[1])))
+                dx = float(marker_scene.x() - scene_pos.x())
+                dy = float(marker_scene.y() - scene_pos.y())
+                dist = (dx * dx + dy * dy) ** 0.5
+                candidates.append((dist, marker_id))
+
+            if not candidates:
+                return None
+
+            candidates.sort(key=lambda item: item[0])
+            best_dist, best_marker = candidates[0]
+
+            # Generous enough for trackpads and labels, but still local.
+            if best_dist <= 45:
+                return best_marker
+        except Exception:
+            return None
+
+        return None
+
+    def set_ecg_drag_marker_position(self, marker_id, x, y):
+        marker_id = str(marker_id)
+
+        if marker_id.startswith("p:"):
+            kind = marker_id.split(":", 1)[1]
+            self.set_p_landmark_position(kind, float(x), float(y))
+            try:
+                self.rebuild_caliper_measurements_panel()
+            except Exception:
+                pass
+            return
+
+        if marker_id.startswith("qrs:"):
+            kind = marker_id.split(":", 1)[1]
+            self.store_qrs_landmark(kind, float(x), float(y))
+            self.selected_ecg_marker = marker_id
+            self.hovered_ecg_marker = marker_id
+
+            try:
+                self.rebuild_caliper_measurements_panel()
+            except Exception:
+                pass
+
+            return
+
+
     def handle_p_marker_hover_drag(self, scene_pos):
-        # Hover, select, and drag-reposition P onset/peak/offset markers.
+        # Hover/select and reposition ECG caliper landmarks.
         #
-        # Important detail:
-        # pyqtgraph's ViewBox normally treats click-drag as pan. When the mouse
-        # is near a P marker, temporarily disable ViewBox mouse panning so the
-        # drag can be used for marker repositioning instead.
+        # Clean interaction rule:
+        # - Normal mouse drag = plot navigation/pan
+        # - Mouse wheel = zoom
+        # - Ctrl + left-drag on a marker = move marker
+        #
+        # This prevents marker editing from fighting with navigation.
         self.ensure_p_marker_drag_signals()
 
         try:
@@ -1763,7 +1895,9 @@ class ECGCalipersPanel(QWidget):
             inside_plot = True
 
         if not inside_plot:
+            self.dragging_ecg_marker = None
             self.dragging_p_marker = None
+            self.hovered_ecg_marker = None
             self.hovered_p_marker = None
             try:
                 self.plot.getViewBox().setMouseEnabled(x=True, y=True)
@@ -1774,12 +1908,43 @@ class ECGCalipersPanel(QWidget):
 
         try:
             left_down = bool(QApplication.mouseButtons() & _Qt.LeftButton)
+            ctrl_down = bool(QApplication.keyboardModifiers() & _Qt.ControlModifier)
         except Exception:
             left_down = False
+            ctrl_down = False
 
-        # If already dragging, keep dragging even if the pointer is no longer
-        # close to the original marker.
-        if left_down and self.dragging_p_marker is not None:
+        if not ctrl_down:
+            self.dragging_ecg_marker = None
+            self.dragging_p_marker = None
+
+            near_marker = self.nearest_ecg_drag_marker(scene_pos)
+            self.hovered_ecg_marker = near_marker
+
+            if near_marker and near_marker.startswith("p:"):
+                self.hovered_p_marker = near_marker.split(":", 1)[1]
+            else:
+                self.hovered_p_marker = None
+
+            try:
+                self.plot.getViewBox().setMouseEnabled(x=True, y=True)
+
+                if near_marker is not None:
+                    self.plot.setCursor(_Qt.OpenHandCursor)
+                    label = self.ecg_drag_marker_label(near_marker)
+                    if near_marker.startswith("p:") and hasattr(self, "p_status_label"):
+                        self.p_status_label.setText(f"{label}: Ctrl + drag to move")
+                    elif near_marker.startswith("qrs:") and hasattr(self, "qrs_status_label"):
+                        self.qrs_status_label.setText(f"{label}: Ctrl + drag to move")
+                else:
+                    self.plot.unsetCursor()
+            except Exception:
+                pass
+
+            return
+
+        current_drag = getattr(self, "dragging_ecg_marker", None)
+
+        if left_down and current_drag is not None:
             mapped = self.map_scene_pos_to_data(scene_pos)
             if mapped is None:
                 return
@@ -1788,7 +1953,8 @@ class ECGCalipersPanel(QWidget):
             if snapped is None:
                 return
 
-            self.set_p_landmark_position(self.dragging_p_marker, snapped[0], snapped[1])
+            self.set_ecg_drag_marker_position(current_drag, snapped[0], snapped[1])
+            self.refresh_all_caliper_measurements()
 
             try:
                 self.refresh_plot()
@@ -1806,22 +1972,16 @@ class ECGCalipersPanel(QWidget):
 
             return
 
-        # Mouse button just went down. Start dragging from either the marker
-        # currently under the pointer or the marker that was hovered just before
-        # the click. This avoids the common failure where the pointer moves a few
-        # pixels during mouse-down and nearest-marker detection is lost.
         if left_down:
-            near_kind = self.nearest_p_marker_kind(scene_pos)
+            near_marker = self.nearest_ecg_drag_marker(scene_pos)
 
-            if near_kind is None:
-                near_kind = getattr(self, "hovered_p_marker", None)
+            if near_marker is not None:
+                self.dragging_ecg_marker = near_marker
+                self.selected_ecg_marker = near_marker
 
-            if near_kind is None:
-                near_kind = getattr(self, "selected_p_marker", None)
-
-            if near_kind is not None:
-                self.dragging_p_marker = near_kind
-                self.selected_p_marker = near_kind
+                if near_marker.startswith("p:"):
+                    self.dragging_p_marker = near_marker.split(":", 1)[1]
+                    self.selected_p_marker = near_marker.split(":", 1)[1]
 
                 mapped = self.map_scene_pos_to_data(scene_pos)
                 if mapped is None:
@@ -1831,7 +1991,8 @@ class ECGCalipersPanel(QWidget):
                 if snapped is None:
                     return
 
-                self.set_p_landmark_position(self.dragging_p_marker, snapped[0], snapped[1])
+                self.set_ecg_drag_marker_position(near_marker, snapped[0], snapped[1])
+                self.refresh_all_caliper_measurements()
 
                 try:
                     self.refresh_plot()
@@ -1849,26 +2010,26 @@ class ECGCalipersPanel(QWidget):
 
                 return
 
-        # Mouse is not down: hover state only.
+        self.dragging_ecg_marker = None
         self.dragging_p_marker = None
-        near_kind = self.nearest_p_marker_kind(scene_pos)
-        self.hovered_p_marker = near_kind
+        near_marker = self.nearest_ecg_drag_marker(scene_pos)
+        self.hovered_ecg_marker = near_marker
+
+        if near_marker and near_marker.startswith("p:"):
+            self.hovered_p_marker = near_marker.split(":", 1)[1]
+        else:
+            self.hovered_p_marker = None
 
         try:
-            if near_kind is not None:
-                # Prevent plot panning from stealing the next click-drag.
+            if near_marker is not None:
                 self.plot.getViewBox().setMouseEnabled(x=False, y=False)
                 self.plot.setCursor(_Qt.OpenHandCursor)
-
-                if hasattr(self, "p_status_label"):
-                    pretty = {
-                        "onset": "P onset",
-                        "peak": "P peak",
-                        "offset": "P offset",
-                    }.get(near_kind, near_kind)
-                    self.p_status_label.setText(f"{pretty}: hover - drag to reposition")
+                label = self.ecg_drag_marker_label(near_marker)
+                if near_marker.startswith("p:") and hasattr(self, "p_status_label"):
+                    self.p_status_label.setText(f"{label}: release after moving")
+                elif near_marker.startswith("qrs:") and hasattr(self, "qrs_status_label"):
+                    self.qrs_status_label.setText(f"{label}: release after moving")
             else:
-                # Restore normal plot navigation away from markers.
                 self.plot.getViewBox().setMouseEnabled(x=True, y=True)
                 self.plot.unsetCursor()
         except Exception:
@@ -1945,6 +2106,11 @@ class ECGCalipersPanel(QWidget):
         self.plot_current_ecg_trace(t, y)
         self.draw_baseline_line()
         self.draw_landmark_markers()
+        self.draw_qrs_markers()
+        try:
+            self.rebuild_caliper_measurements_panel()
+        except Exception:
+            pass
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setLabel("left", "Amplitude (raw ADC units; not mV)")
         self.plot.getAxis("left").enableAutoSIPrefix(False)
@@ -2070,6 +2236,11 @@ class ECGCalipersPanel(QWidget):
         self.plot_current_ecg_trace(t, y)
         self.draw_baseline_line()
         self.draw_landmark_markers()
+        self.draw_qrs_markers()
+        try:
+            self.rebuild_caliper_measurements_panel()
+        except Exception:
+            pass
 
         peaks = np.asarray(self.detected_r_peaks, dtype=int)
         valid_peaks = peaks[(peaks >= 0) & (peaks < len(t))]
@@ -2175,7 +2346,770 @@ class ECGCalipersPanel(QWidget):
         elif peak:
             lines.append("P amplitude: set baseline first")
 
+        self.append_qrs_summary_lines(lines)
         self.summary_box.setText("\n".join(lines))
+
+    def normalize_marker_key(self, key):
+        return str(key).lower().replace(" ", "").replace("_", "").replace("-", "")
+
+    def get_landmark_xy_by_variants(self, variants):
+        # Exact normalized lookup only.
+        # This prevents short names like "S" from accidentally matching keys
+        # such as "p_onset".
+        variants_norm = {self.normalize_marker_key(v) for v in variants}
+
+        def key_matches(k):
+            return self.normalize_marker_key(k) in variants_norm
+
+        def xy_from_obj(obj):
+            try:
+                xy = self.extract_landmark_xy(obj)
+                if xy is not None:
+                    return xy
+            except Exception:
+                pass
+
+            try:
+                if isinstance(obj, dict):
+                    x = obj.get("time_s", obj.get("time", obj.get("x", None)))
+                    y = obj.get("value", obj.get("y", obj.get("raw", None)))
+                    if x is not None and y is not None:
+                        return float(x), float(y)
+            except Exception:
+                pass
+
+            try:
+                if isinstance(obj, (list, tuple)) and len(obj) >= 2:
+                    return float(obj[0]), float(obj[1])
+            except Exception:
+                pass
+
+            return None
+
+        try:
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets"):
+                d = self.marker_sets.get(view_key, None)
+                if isinstance(d, dict):
+                    for k, v in d.items():
+                        if key_matches(k):
+                            xy = xy_from_obj(v)
+                            if xy is not None:
+                                return xy
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "landmarks") and isinstance(self.landmarks, dict):
+                for k, v in self.landmarks.items():
+                    if key_matches(k):
+                        xy = xy_from_obj(v)
+                        if xy is not None:
+                            return xy
+        except Exception:
+            pass
+
+        try:
+            for attr_name, obj in vars(self).items():
+                if not isinstance(obj, dict):
+                    continue
+
+                for k, v in obj.items():
+                    if key_matches(k):
+                        xy = xy_from_obj(v)
+                        if xy is not None:
+                            return xy
+
+                for outer_k, outer_v in obj.items():
+                    if isinstance(outer_v, dict):
+                        for k, v in outer_v.items():
+                            if key_matches(k):
+                                xy = xy_from_obj(v)
+                                if xy is not None:
+                                    return xy
+        except Exception:
+            pass
+
+        return None
+
+
+    def sync_qrs_landmarks_from_all_storage(self):
+        # Normalize QRS/ST marker names from any internal storage used by the
+        # generic caliper placement code. This keeps the right panel and marker
+        # dragging in sync.
+        key_groups = {
+            "qrs_onset": ["qrs_onset", "qrs onset", "QRS onset", "q_onset", "q onset", "Q onset", "qrs_start", "QRS start"],
+            "q_nadir": ["q_nadir", "q nadir", "Q nadir", "q_point", "q point", "Q point", "Q"],
+            "s_nadir": ["s_nadir", "s nadir", "S nadir", "s_point", "s point", "S point", "S"],
+            "j_point": ["j_point", "j point", "J point", "qrs_offset", "qrs offset", "QRS offset", "qrs_end", "QRS end", "J"],
+        }
+
+        def norm(s):
+            return str(s).lower().replace(" ", "").replace("_", "").replace("-", "")
+
+        normalized = {std: {norm(k) for k in keys} for std, keys in key_groups.items()}
+
+        def xy_from_obj(obj):
+            try:
+                xy = self.extract_landmark_xy(obj)
+                if xy is not None:
+                    return xy
+            except Exception:
+                pass
+
+            try:
+                if isinstance(obj, dict):
+                    x = obj.get("time_s", obj.get("time", obj.get("x", obj.get("t", None))))
+                    y = obj.get("value", obj.get("y", obj.get("y_raw", obj.get("raw", obj.get("amplitude", None)))))
+                    if x is not None and y is not None:
+                        return float(x), float(y)
+            except Exception:
+                pass
+
+            try:
+                if isinstance(obj, (list, tuple)):
+                    nums = []
+                    for item in obj:
+                        try:
+                            nums.append(float(item))
+                        except Exception:
+                            pass
+                    if len(nums) >= 2:
+                        return nums[0], nums[1]
+            except Exception:
+                pass
+
+            return None
+
+        found = {}
+
+        def scan_dict(d):
+            if not isinstance(d, dict):
+                return
+
+            for k, v in d.items():
+                nk = norm(k)
+                for std, variants in normalized.items():
+                    if nk in variants:
+                        xy = xy_from_obj(v)
+                        if xy is not None:
+                            found[std] = xy
+
+            for outer_k, outer_v in d.items():
+                if isinstance(outer_v, dict):
+                    scan_dict(outer_v)
+
+        try:
+            if hasattr(self, "marker_sets") and isinstance(self.marker_sets, dict):
+                try:
+                    view_key = self.get_active_view_key()
+                    scan_dict(self.marker_sets.get(view_key, {}))
+                except Exception:
+                    pass
+                scan_dict(self.marker_sets)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "landmarks") and isinstance(self.landmarks, dict):
+                scan_dict(self.landmarks)
+        except Exception:
+            pass
+
+        try:
+            for attr_name, obj in vars(self).items():
+                if isinstance(obj, dict):
+                    scan_dict(obj)
+        except Exception:
+            pass
+
+        if not found:
+            return
+
+        if not hasattr(self, "landmarks") or self.landmarks is None:
+            self.landmarks = {}
+
+        try:
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets"):
+                if view_key not in self.marker_sets or not isinstance(self.marker_sets[view_key], dict):
+                    self.marker_sets[view_key] = {}
+        except Exception:
+            view_key = None
+
+        for std, xy in found.items():
+            value = (float(xy[0]), float(xy[1]))
+            self.landmarks[std] = value
+            try:
+                if hasattr(self, "marker_sets") and view_key is not None:
+                    self.marker_sets[view_key][std] = value
+            except Exception:
+                pass
+
+    def refresh_all_caliper_measurements(self):
+        # One safe refresh point after any marker placement/move.
+        try:
+            self.sync_qrs_landmarks_from_all_storage()
+        except Exception:
+            pass
+
+        try:
+            self.update_p_measurements_status()
+        except Exception:
+            pass
+
+        try:
+            self.update_qrs_measurements_status()
+        except Exception:
+            pass
+
+        for method_name in [
+            "update_measurements_panel",
+            "update_measurement_summary",
+            "update_summary_panel",
+        ]:
+            try:
+                method = getattr(self, method_name, None)
+                if callable(method):
+                    method()
+            except Exception:
+                pass
+
+    def get_current_measurement_view_name(self):
+        try:
+            view_key = self.get_active_view_key()
+        except Exception:
+            view_key = ""
+
+        if view_key == "template":
+            return "Teaching Template ECG"
+        if view_key == "filtered":
+            return "Filtered ECG 0.5-40 Hz"
+        if view_key == "raw":
+            return "Raw"
+        return str(view_key) if view_key else "--"
+
+    def set_caliper_measurements_text_direct(self, text):
+        # The right-side measurement box has changed names during development.
+        # Update whichever widget is actually present, but only if it looks like
+        # the caliper measurement panel.
+        candidate_names = [
+            "summary_box",
+            "measurements_box",
+            "measurement_box",
+            "measurements_text",
+            "measurement_text",
+            "caliper_measurements_box",
+            "caliper_measurements_text",
+            "results_box",
+        ]
+
+        for name in candidate_names:
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+
+            try:
+                old_text = ""
+                if hasattr(widget, "toPlainText"):
+                    old_text = widget.toPlainText()
+                elif hasattr(widget, "text"):
+                    old_text = widget.text()
+
+                # Avoid accidentally changing the log panel.
+                if old_text and "ECG Calipers Measurements" not in old_text and "Template method" not in old_text:
+                    continue
+
+                if hasattr(widget, "setPlainText"):
+                    widget.setPlainText(text)
+                    return True
+
+                if hasattr(widget, "setText"):
+                    widget.setText(text)
+                    return True
+            except Exception:
+                pass
+
+        # Fallback: scan object attributes for a text widget containing the
+        # measurement title.
+        try:
+            for name, widget in vars(self).items():
+                if widget is None:
+                    continue
+
+                old_text = ""
+                try:
+                    if hasattr(widget, "toPlainText"):
+                        old_text = widget.toPlainText()
+                    elif hasattr(widget, "text"):
+                        old_text = widget.text()
+                except Exception:
+                    continue
+
+                if "ECG Calipers Measurements" not in old_text:
+                    continue
+
+                if hasattr(widget, "setPlainText"):
+                    widget.setPlainText(text)
+                    return True
+
+                if hasattr(widget, "setText"):
+                    widget.setText(text)
+                    return True
+        except Exception:
+            pass
+
+        return False
+
+    def rebuild_caliper_measurements_panel(self):
+        # Directly rebuild the right-side measurements box from the current
+        # marker coordinates. This is intentionally independent of older summary
+        # methods, so the box updates after both placement and Ctrl-drag.
+        try:
+            self.sync_qrs_landmarks_from_all_storage()
+        except Exception:
+            pass
+
+        lines = []
+        lines.append("ECG Calipers Measurements")
+        lines.append("")
+
+        try:
+            file_name = getattr(self, "current_file_name", None) or getattr(self, "loaded_file_name", None) or "raw.csv"
+        except Exception:
+            file_name = "raw.csv"
+
+        try:
+            channel = getattr(self, "current_channel", None) or getattr(self, "channel_name", None) or "ch1"
+        except Exception:
+            channel = "ch1"
+
+        lines.append(f"File: {file_name}")
+        lines.append(f"Channel: {channel}")
+        lines.append(f"View: {self.get_current_measurement_view_name()}")
+
+        try:
+            marker_set_name = self.get_active_view_key()
+        except Exception:
+            marker_set_name = "--"
+        lines.append(f"Active marker set: {marker_set_name}")
+
+        try:
+            if self.get_active_view_key() == "template":
+                lines.append("Teaching-only template; not for diagnosis/research.")
+                lines.append("")
+                lines.append("Template method:")
+                lines.append("1. Filtered ECG is used as the source signal.")
+                lines.append("2. R peaks are auto-detected if needed.")
+                lines.append("3. R timing = detected R-peak times.")
+                lines.append("4. R amplitude = local filtered R peak minus pre-QRS median baseline.")
+                lines.append("5. P/Q/S/T are finite teaching shapes placed relative to R and RR.")
+                lines.append("6. Relative amplitudes: P≈0.12R, Q≈-0.12R, S≈-0.25R, T≈0.30R.")
+                lines.append("7. Baseline is fixed at 0 template units.")
+                lines.append("")
+        except Exception:
+            pass
+
+        try:
+            r_count = len(getattr(self, "r_peak_indices", [])) or len(getattr(self, "detected_r_peaks", []))
+            if r_count:
+                lines.append(f"R peaks detected: {r_count}")
+            else:
+                lines.append("R: --")
+        except Exception:
+            lines.append("R: --")
+
+        try:
+            baseline = getattr(self, "baseline_value", None)
+            if baseline is None:
+                lines.append("")
+                lines.append("Baseline: not set")
+            else:
+                lines.append("")
+                lines.append(f"Baseline: {float(baseline):.4f} raw units")
+        except Exception:
+            lines.append("")
+            lines.append("Baseline: --")
+
+        # P wave
+        try:
+            p_on = self.find_any_p_landmark_xy("onset")
+        except Exception:
+            p_on = None
+        try:
+            p_pk = self.find_any_p_landmark_xy("peak")
+        except Exception:
+            p_pk = None
+        try:
+            p_off = self.find_any_p_landmark_xy("offset")
+        except Exception:
+            p_off = None
+
+        lines.append("")
+        lines.append("P-wave calipers")
+        lines.append(f"P onset: {p_on[0]:.4f} s" if p_on else "P onset: --")
+        lines.append(f"P peak: {p_pk[0]:.4f} s" if p_pk else "P peak: --")
+        lines.append(f"P offset: {p_off[0]:.4f} s" if p_off else "P offset: --")
+
+        if p_on and p_off:
+            try:
+                lines.append(f"P duration: {(float(p_off[0]) - float(p_on[0])) * 1000.0:.1f} ms")
+            except Exception:
+                pass
+
+        try:
+            baseline = getattr(self, "baseline_value", None)
+            if baseline is not None and p_pk:
+                lines.append(f"P amplitude: {float(p_pk[1]) - float(baseline):.4f}")
+        except Exception:
+            pass
+
+        # QRS / ST
+        try:
+            qrs_on = self.get_qrs_landmark_xy("qrs_onset")
+        except Exception:
+            qrs_on = None
+        try:
+            q_nadir = self.get_qrs_landmark_xy("q_nadir")
+        except Exception:
+            q_nadir = None
+        try:
+            s_nadir = self.get_qrs_landmark_xy("s_nadir")
+        except Exception:
+            s_nadir = None
+        try:
+            j_point = self.get_qrs_landmark_xy("j_point")
+        except Exception:
+            j_point = None
+
+        lines.append("")
+        lines.append("QRS / ST calipers")
+        lines.append(f"QRS onset: {qrs_on[0]:.4f} s" if qrs_on else "QRS onset: --")
+        lines.append(f"Q nadir: {q_nadir[0]:.4f} s" if q_nadir else "Q nadir: --")
+        lines.append(f"S nadir: {s_nadir[0]:.4f} s" if s_nadir else "S nadir: --")
+        lines.append(f"J point: {j_point[0]:.4f} s" if j_point else "J point: --")
+
+        if qrs_on and j_point:
+            try:
+                lines.append(f"QRS duration: {(float(j_point[0]) - float(qrs_on[0])) * 1000.0:.1f} ms")
+            except Exception:
+                pass
+
+        if p_on and qrs_on:
+            try:
+                lines.append(f"PR interval: {(float(qrs_on[0]) - float(p_on[0])) * 1000.0:.1f} ms")
+            except Exception:
+                pass
+
+        if p_off and qrs_on:
+            try:
+                lines.append(f"PR segment: {(float(qrs_on[0]) - float(p_off[0])) * 1000.0:.1f} ms")
+            except Exception:
+                pass
+
+        try:
+            baseline = getattr(self, "baseline_value", None)
+            if baseline is not None:
+                if q_nadir:
+                    lines.append(f"Q deflection: {float(q_nadir[1]) - float(baseline):.4f}")
+                if s_nadir:
+                    lines.append(f"S deflection: {float(s_nadir[1]) - float(baseline):.4f}")
+        except Exception:
+            pass
+
+        text = "\n".join(lines)
+        self.set_caliper_measurements_text_direct(text)
+
+    def refresh_all_caliper_measurements(self):
+        # One safe refresh point after marker placement/movement.
+        try:
+            self.sync_qrs_landmarks_from_all_storage()
+        except Exception:
+            pass
+
+        try:
+            self.update_p_measurements_status()
+        except Exception:
+            pass
+
+        try:
+            self.update_qrs_measurements_status()
+        except Exception:
+            pass
+
+        try:
+            self.rebuild_caliper_measurements_panel()
+        except Exception:
+            pass
+
+    def get_qrs_landmark_xy(self, kind):
+        try:
+            if not getattr(self, "_syncing_qrs_landmarks", False):
+                self._syncing_qrs_landmarks = True
+                try:
+                    self.sync_qrs_landmarks_from_all_storage()
+                finally:
+                    self._syncing_qrs_landmarks = False
+        except Exception:
+            self._syncing_qrs_landmarks = False
+
+        kind = str(kind).lower()
+
+        variants = {
+            "qrs_onset": [
+                "qrs_onset", "qrs onset", "QRS onset",
+                "q_onset", "q onset", "Q onset",
+                "qrs_start", "qrs start", "QRS start",
+            ],
+            "q_nadir": [
+                "q_nadir", "q nadir", "Q nadir",
+                "q_point", "q point", "Q point", "Q",
+            ],
+            "s_nadir": [
+                "s_nadir", "s nadir", "S nadir",
+                "s_point", "s point", "S point", "S",
+            ],
+            "j_point": [
+                "j_point", "j point", "J point", "J",
+                "qrs_offset", "qrs offset", "QRS offset",
+                "qrs_end", "qrs end", "QRS end",
+            ],
+        }.get(kind, [])
+
+        return self.get_landmark_xy_by_variants(variants)
+
+
+    def store_qrs_landmark(self, kind, x, y):
+        # Store QRS/ST caliper positions in the same per-view structure used by
+        # the other ECG calipers. This is required for click-drag repositioning.
+        kind = str(kind).lower()
+
+        standard_key = {
+            "qrs_onset": "qrs_onset",
+            "q_nadir": "q_nadir",
+            "s_nadir": "s_nadir",
+            "j_point": "j_point",
+        }.get(kind)
+
+        if standard_key is None:
+            return
+
+        value = (float(x), float(y))
+
+        if not hasattr(self, "landmarks") or self.landmarks is None:
+            self.landmarks = {}
+
+        self.landmarks[standard_key] = value
+
+        try:
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets"):
+                if view_key not in self.marker_sets or not isinstance(self.marker_sets[view_key], dict):
+                    self.marker_sets[view_key] = {}
+                self.marker_sets[view_key][standard_key] = value
+        except Exception:
+            pass
+
+        # Also update common display-name keys if they already exist.
+        alternate_keys = {
+            "qrs_onset": ["QRS onset", "qrs onset", "q_onset", "Q onset", "q onset"],
+            "q_nadir": ["Q nadir", "q nadir", "Q point", "q point"],
+            "s_nadir": ["S nadir", "s nadir", "S point", "s point"],
+            "j_point": ["J point", "j point", "QRS offset", "qrs_offset", "qrs offset"],
+        }.get(kind, [])
+
+        try:
+            for key in alternate_keys:
+                if key in self.landmarks:
+                    self.landmarks[key] = value
+
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets") and isinstance(self.marker_sets, dict):
+                d = self.marker_sets.get(view_key, None)
+                if isinstance(d, dict):
+                    for key in alternate_keys:
+                        if key in d:
+                            d[key] = value
+        except Exception:
+            pass
+
+    def clear_qrs_landmarks(self):
+        keys_to_remove = [
+            "qrs_onset", "QRS onset", "q onset", "Q onset",
+            "q_nadir", "Q nadir", "q point", "Q point",
+            "s_nadir", "S nadir", "s point", "S point",
+            "j_point", "J point", "qrs_offset", "QRS offset",
+        ]
+
+        try:
+            for key in keys_to_remove:
+                if hasattr(self, "landmarks") and isinstance(self.landmarks, dict):
+                    self.landmarks.pop(key, None)
+
+            view_key = self.get_active_view_key()
+            if hasattr(self, "marker_sets") and isinstance(self.marker_sets, dict):
+                d = self.marker_sets.get(view_key, None)
+                if isinstance(d, dict):
+                    for key in keys_to_remove:
+                        d.pop(key, None)
+        except Exception:
+            pass
+
+        if hasattr(self, "qrs_status_label"):
+            self.qrs_status_label.setText("QRS: cleared")
+
+        try:
+            self.redraw_plot_with_r_peaks()
+        except Exception:
+            try:
+                self.refresh_plot()
+            except Exception:
+                pass
+
+        self.update_qrs_measurements_status()
+
+    def qrs_marker_style(self, name):
+        try:
+            is_template = self.get_active_view_key() == "template"
+        except Exception:
+            is_template = False
+
+        if is_template:
+            return {
+                "brush": "#FFD54F",
+                "pen": "#111111",
+                "text": "#FFE082",
+            }
+
+        styles = {
+            "QRS onset": {"brush": "#00E5FF", "pen": "#00131A", "text": "#B2EBF2"},
+            "Q nadir": {"brush": "#7C4DFF", "pen": "#FFFFFF", "text": "#D1C4E9"},
+            "S nadir": {"brush": "#FF4FD8", "pen": "#FFFFFF", "text": "#F8BBD0"},
+            "J point": {"brush": "#00C853", "pen": "#FFFFFF", "text": "#B9F6CA"},
+        }
+        return styles.get(name, {"brush": "#00C853", "pen": "#FFFFFF", "text": "#B9F6CA"})
+
+    def draw_qrs_markers(self):
+        marker_defs = [
+            ("qrs_onset", "QRS onset", "t"),
+            ("q_nadir", "Q", "o"),
+            ("s_nadir", "S", "o"),
+            ("j_point", "J", "t1"),
+        ]
+
+        full_names = {
+            "qrs_onset": "QRS onset",
+            "q_nadir": "Q nadir",
+            "s_nadir": "S nadir",
+            "j_point": "J point",
+        }
+
+        for kind, label, symbol in marker_defs:
+            xy = self.get_qrs_landmark_xy(kind)
+            if xy is None:
+                continue
+
+            x0, y0 = xy
+            style = self.qrs_marker_style(full_names.get(kind, label))
+
+            try:
+                item = self.plot.plot(
+                    [float(x0)],
+                    [float(y0)],
+                    pen=None,
+                    symbol=symbol,
+                    symbolSize=15,
+                    symbolBrush=pg.mkBrush(style["brush"]),
+                    symbolPen=pg.mkPen(style["pen"], width=2),
+                    name=f"QRS marker {label}"
+                )
+                try:
+                    item.setZValue(70)
+                except Exception:
+                    pass
+
+                txt = pg.TextItem(label, color=style["text"], anchor=(0.5, 1.35))
+                txt.setPos(float(x0), float(y0))
+                txt.setZValue(75)
+                self.plot.addItem(txt)
+            except Exception:
+                pass
+
+    def update_qrs_measurements_status(self):
+        onset = self.get_qrs_landmark_xy("qrs_onset")
+        q = self.get_qrs_landmark_xy("q_nadir")
+        s = self.get_qrs_landmark_xy("s_nadir")
+        j = self.get_qrs_landmark_xy("j_point")
+
+        parts = []
+
+        if onset and j:
+            qrs_ms = (float(j[0]) - float(onset[0])) * 1000.0
+            parts.append(f"QRS {qrs_ms:.1f} ms")
+        else:
+            count = sum(x is not None for x in [onset, q, s, j])
+            parts.append(f"QRS: {count}/4 set" if count else "QRS: --")
+
+        if self.baseline_value is not None:
+            try:
+                baseline = float(self.baseline_value)
+                if q:
+                    parts.append(f"Q {float(q[1]) - baseline:.3f}")
+                if s:
+                    parts.append(f"S {float(s[1]) - baseline:.3f}")
+            except Exception:
+                pass
+
+        if hasattr(self, "qrs_status_label"):
+            self.qrs_status_label.setText(" | ".join(parts))
+
+        try:
+            self.update_measurement_summary()
+        except Exception:
+            pass
+
+    def append_qrs_summary_lines(self, lines):
+        onset = self.get_qrs_landmark_xy("qrs_onset")
+        q = self.get_qrs_landmark_xy("q_nadir")
+        s = self.get_qrs_landmark_xy("s_nadir")
+        j = self.get_qrs_landmark_xy("j_point")
+
+        lines.append("")
+        lines.append("QRS / ST calipers")
+        lines.append(f"QRS onset: {onset[0]:.4f} s" if onset else "QRS onset: --")
+        lines.append(f"Q nadir: {q[0]:.4f} s" if q else "Q nadir: --")
+        lines.append(f"S nadir: {s[0]:.4f} s" if s else "S nadir: --")
+        lines.append(f"J point: {j[0]:.4f} s" if j else "J point: --")
+
+        if onset and j:
+            qrs_ms = (float(j[0]) - float(onset[0])) * 1000.0
+            lines.append(f"QRS duration: {qrs_ms:.1f} ms")
+
+        p_onset = None
+        p_offset = None
+        try:
+            p_onset = self.find_any_p_landmark_xy("onset")
+            p_offset = self.find_any_p_landmark_xy("offset")
+        except Exception:
+            pass
+
+        if p_onset and onset:
+            pr_ms = (float(onset[0]) - float(p_onset[0])) * 1000.0
+            lines.append(f"PR interval: {pr_ms:.1f} ms")
+
+        if p_offset and onset:
+            pr_seg_ms = (float(onset[0]) - float(p_offset[0])) * 1000.0
+            lines.append(f"PR segment: {pr_seg_ms:.1f} ms")
+
+        if self.baseline_value is not None:
+            try:
+                baseline = float(self.baseline_value)
+                if q:
+                    lines.append(f"Q deflection from baseline: {float(q[1]) - baseline:.4f}")
+                if s:
+                    lines.append(f"S deflection from baseline: {float(s[1]) - baseline:.4f}")
+            except Exception:
+                pass
 
     def set_landmark_mode(self, name):
         if self.current_plot_t is None or self.current_plot_y is None:
