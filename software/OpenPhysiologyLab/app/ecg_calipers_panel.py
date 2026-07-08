@@ -74,8 +74,8 @@ class ECGCalipersPanel(QWidget):
 
         title = QLabel("OpenPhysiologyLab ECG Calipers Panel")
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        title.setStyleSheet("font-size: 13px; font-weight: bold;")
-        title.setMaximumHeight(22)
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #F2F2F4; padding: 2px;")
+        title.setMaximumHeight(32)
         layout.addWidget(title)
 
         subtitle = QLabel(
@@ -84,7 +84,8 @@ class ECGCalipersPanel(QWidget):
         )
         subtitle.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         subtitle.setWordWrap(True)
-        subtitle.setMaximumHeight(24)
+        subtitle.setStyleSheet("color: #F2F2F4; background-color: transparent;")
+        subtitle.setMaximumHeight(38)
         layout.addWidget(subtitle)
 
         def make_caliper_group(title_text):
@@ -146,7 +147,8 @@ class ECGCalipersPanel(QWidget):
         controls_layout.addWidget(self.template_overlay_box)
 
         self.reset_view_btn = QPushButton("Reset")
-        self.reset_view_btn.clicked.connect(self.reset_plot_view)
+        self.reset_view_btn.clicked.connect(self.reset_to_selected_complete_beat_clicked)
+        # Reset in ECG Calipers returns to selected complete PQRST beat.
         controls_layout.addWidget(self.reset_view_btn)
 
         rpeak_group, rpeak_layout = make_caliper_group("R Reference")
@@ -237,10 +239,11 @@ class ECGCalipersPanel(QWidget):
         landmark_layout.addWidget(self.clear_p_btn)
         landmark_layout.addWidget(self.p_status_label, stretch=1)
 
-        qrs_group, qrs_layout = make_caliper_group("QRS / ST")
+        qrs_group, qrs_layout = make_caliper_group("QRS Complex")
 
         self.qrs_onset_btn = QPushButton("QRS onset")
         self.q_nadir_btn = QPushButton("Q nadir")
+        self.r_peak_btn = QPushButton("R peak")
         self.s_nadir_btn = QPushButton("S nadir")
         self.j_point_btn = QPushButton("J point")
         self.clear_qrs_btn = QPushButton("Clear QRS")
@@ -255,11 +258,12 @@ class ECGCalipersPanel(QWidget):
             "background-color: rgba(0, 200, 83, 35);"
             "}"
         )
-        for btn in [self.qrs_onset_btn, self.q_nadir_btn, self.s_nadir_btn, self.j_point_btn, self.clear_qrs_btn]:
+        for btn in [self.qrs_onset_btn, self.q_nadir_btn, self.r_peak_btn, self.s_nadir_btn, self.j_point_btn, self.clear_qrs_btn]:
             btn.setStyleSheet(qrs_button_style)
 
         self.qrs_onset_btn.clicked.connect(lambda: self.set_landmark_mode("QRS onset"))
         self.q_nadir_btn.clicked.connect(lambda: self.set_landmark_mode("Q nadir"))
+        self.r_peak_btn.clicked.connect(lambda: self.set_landmark_mode("R peak"))
         self.s_nadir_btn.clicked.connect(lambda: self.set_landmark_mode("S nadir"))
         self.j_point_btn.clicked.connect(lambda: self.set_landmark_mode("J point"))
         self.clear_qrs_btn.clicked.connect(self.clear_qrs_landmarks)
@@ -270,14 +274,14 @@ class ECGCalipersPanel(QWidget):
 
         qrs_layout.addWidget(self.qrs_onset_btn)
         qrs_layout.addWidget(self.q_nadir_btn)
+        qrs_layout.addWidget(self.r_peak_btn)
         qrs_layout.addWidget(self.s_nadir_btn)
         qrs_layout.addWidget(self.j_point_btn)
         qrs_layout.addWidget(self.clear_qrs_btn)
         qrs_layout.addWidget(self.qrs_status_label, stretch=1)
 
-        rt_group, rt_layout = make_caliper_group("R / T / Beat")
+        rt_group, rt_layout = make_caliper_group("T wave")
 
-        self.r_peak_btn = QPushButton("R peak")
         self.t_onset_btn = QPushButton("T onset")
         self.t_peak_btn = QPushButton("T peak")
         self.t_offset_btn = QPushButton("T offset")
@@ -294,10 +298,9 @@ class ECGCalipersPanel(QWidget):
             "background-color: rgba(255, 213, 79, 35);"
             "}"
         )
-        for btn in [self.r_peak_btn, self.t_onset_btn, self.t_peak_btn, self.t_offset_btn, self.clear_t_btn, self.beat_view_btn]:
+        for btn in [self.t_onset_btn, self.t_peak_btn, self.t_offset_btn, self.clear_t_btn, self.beat_view_btn]:
             btn.setStyleSheet(rt_button_style)
 
-        self.r_peak_btn.clicked.connect(lambda: self.set_landmark_mode("R peak"))
         self.t_onset_btn.clicked.connect(lambda: self.set_landmark_mode("T onset"))
         self.t_peak_btn.clicked.connect(lambda: self.set_landmark_mode("T peak"))
         self.t_offset_btn.clicked.connect(lambda: self.set_landmark_mode("T offset"))
@@ -308,18 +311,29 @@ class ECGCalipersPanel(QWidget):
         self.t_status_label.setWordWrap(False)
         self.t_status_label.setStyleSheet("color: #FFE082;")
 
-        rt_layout.addWidget(self.r_peak_btn)
+        self.beat_view_btn.setEnabled(False)
+        self.beat_view_btn.setToolTip(
+            "Beat View becomes active after P onset/peak/offset, QRS onset, Q, R, S, J, and T onset/peak/offset are all placed."
+        )
+        self.beat_view_status_label = QLabel("Complete markers first")
+        self.beat_view_status_label.setWordWrap(False)
+        self.beat_view_status_label.setStyleSheet("color: #8F96A6;")
+
+        beat_group, beat_layout = make_caliper_group("Beat View")
+        beat_layout.addWidget(self.beat_view_btn)
+        beat_layout.addWidget(self.beat_view_status_label, stretch=1)
+
         rt_layout.addWidget(self.t_onset_btn)
         rt_layout.addWidget(self.t_peak_btn)
         rt_layout.addWidget(self.t_offset_btn)
         rt_layout.addWidget(self.clear_t_btn)
-        rt_layout.addWidget(self.beat_view_btn)
         rt_layout.addWidget(self.t_status_label, stretch=1)
 
         ribbon_row_2.addWidget(baseline_group, stretch=2)
         ribbon_row_2.addWidget(landmark_group, stretch=4)
         ribbon_row_2.addWidget(qrs_group, stretch=5)
-        ribbon_row_2.addWidget(rt_group, stretch=5)
+        ribbon_row_2.addWidget(rt_group, stretch=4)
+        ribbon_row_2.addWidget(beat_group, stretch=3)
 
         layout.addLayout(ribbon_row_2)
 
@@ -340,12 +354,12 @@ class ECGCalipersPanel(QWidget):
         self.plot.setLabel("left", "Amplitude (raw ADC units; not mV)")
         self.plot.getAxis("left").enableAutoSIPrefix(False)
         self.plot.showGrid(x=True, y=True, alpha=0.25)
-        self.plot.setBackground("#0B1020")
-        self.plot.getPlotItem().setTitle("Load raw.csv to view ECG signal")
+        self.plot.setBackground("#020304")
+        self.plot.getPlotItem().setTitle("Load raw.csv to view ECG signal", color="#D4AF37", size="10pt")
 
         # ECG Calipers navigation rule:
         # allow horizontal ECG browsing, but avoid accidental vertical/pinch runaway.
-        self.plot.setMouseEnabled(x=True, y=False)
+        self.plot.setMouseEnabled(x=False, y=False)
         self.plot.getPlotItem().getViewBox().setMenuEnabled(False)
         self.plot.scene().sigMouseClicked.connect(self.plot_clicked)
 
@@ -358,6 +372,7 @@ class ECGCalipersPanel(QWidget):
         self.time_scroll.setPageStep(500)
         self.time_scroll.valueChanged.connect(self.time_scroll_changed)
         self.time_scroll.setToolTip("Scroll through the recording while keeping the local morphology window.")
+        self.time_scroll.setEnabled(False)
         view_layout.addWidget(self.time_scroll)
 
         left_layout.addWidget(view_group, stretch=1)
@@ -376,32 +391,19 @@ class ECGCalipersPanel(QWidget):
         self.summary_box.setMinimumWidth(320)
         self.summary_box.setText(
             "Caliper measurements will appear here.\n\n"
-            "Load raw.csv, detect R peaks, set baseline, and place markers."
+            "Load raw.csv. ECG Calipers auto-detects R peaks and opens on the first complete PQRST beat."
         )
         summary_layout.addWidget(self.summary_box)
         right_layout.addWidget(summary_group, stretch=2)
 
-        info_group = QGroupBox("ECG Calipers Log")
+        info_group = QGroupBox("Navigation / Method")
         info_layout = QVBoxLayout(info_group)
         info_layout.setContentsMargins(8, 6, 8, 6)
 
         self.info_box = QTextEdit()
         self.info_box.setReadOnly(True)
         self.info_box.setMinimumHeight(90)
-        self.info_box.setText(
-            "ECG Calipers Stage 2\n\n"
-            "Available now:\n"
-            "1. Load raw.csv.\n"
-            "2. Choose recorded channel.\n"
-            "3. View raw ECG signal.\n"
-            "4. View an in-memory filtered ECG signal.\n\n"
-            "Not added yet:\n"
-            "- selected beat context view\n"
-            "- previous/selected/next PQRST display\n"
-            "- manual QRS/T caliper markers\n"
-            "- beat_measurements.csv export\n\n"
-            "Safety: This is for education and experimentation, not diagnosis."
-        )
+        self.update_right_guidance_panel()
         info_layout.addWidget(self.info_box)
         right_layout.addWidget(info_group, stretch=1)
 
@@ -410,6 +412,425 @@ class ECGCalipersPanel(QWidget):
         content_splitter.setSizes([1150, 360])
 
         layout.addWidget(content_splitter, stretch=10)
+        try:
+            self.apply_opl_calipers_theme()
+        except Exception:
+            pass
+
+
+
+    def is_ecg_data_loaded(self):
+        try:
+            return (
+                self.current_plot_t is not None
+                and self.current_plot_y is not None
+                and len(self.current_plot_t) > 1
+                and len(self.current_plot_y) > 1
+            )
+        except Exception:
+            return False
+
+    def set_plot_interaction_loaded_state(self):
+        loaded = self.is_ecg_data_loaded()
+
+        try:
+            self.plot.setMouseEnabled(x=loaded, y=False)
+            vb = self.plot.getViewBox()
+            vb.setMouseEnabled(x=loaded, y=False)
+            vb.setMenuEnabled(False)
+            self.plot.setMenuEnabled(False)
+            self.plot.hideButtons()
+        except Exception:
+            pass
+
+        try:
+            self.time_scroll.setEnabled(loaded)
+        except Exception:
+            pass
+
+    def required_beat_view_missing(self):
+        checks = [
+            ("P onset", lambda: self.find_any_p_landmark_xy("onset")),
+            ("P peak", lambda: self.find_any_p_landmark_xy("peak")),
+            ("P offset", lambda: self.find_any_p_landmark_xy("offset")),
+            ("QRS onset", lambda: self.get_qrs_landmark_xy("qrs_onset")),
+            ("Q nadir", lambda: self.get_qrs_landmark_xy("q_nadir")),
+            ("R peak", lambda: self.get_rt_landmark_xy("r_peak")),
+            ("S nadir", lambda: self.get_qrs_landmark_xy("s_nadir")),
+            ("J point", lambda: self.get_qrs_landmark_xy("j_point")),
+            ("T onset", lambda: self.get_rt_landmark_xy("t_onset")),
+            ("T peak", lambda: self.get_rt_landmark_xy("t_peak")),
+            ("T offset", lambda: self.get_rt_landmark_xy("t_offset")),
+        ]
+
+        missing = []
+        for label, getter in checks:
+            try:
+                if getter() is None:
+                    missing.append(label)
+            except Exception:
+                missing.append(label)
+
+        return missing
+
+    def update_beat_view_button_state(self):
+        missing = self.required_beat_view_missing()
+
+        try:
+            self.beat_view_btn.setEnabled(len(missing) == 0)
+        except Exception:
+            pass
+
+        try:
+            if len(missing) == 0:
+                self.beat_view_status_label.setText("Ready")
+                self.beat_view_status_label.setStyleSheet("color: #50C878;")
+            else:
+                self.beat_view_status_label.setText(f"Need {len(missing)}")
+                self.beat_view_status_label.setStyleSheet("color: #8F96A6;")
+        except Exception:
+            pass
+
+    def current_view_method_text(self):
+        key = self.get_active_view_key()
+
+        if key == "raw":
+            return (
+                "Raw signal view\n"
+                "- raw.csv is read without modifying the file.\n"
+                "- Time comes from time_us when available; otherwise pc_time_s or sample number is used.\n"
+                "- Y-axis shows stored ADC counts from the selected channel.\n"
+                "- No filtering, smoothing, inversion, or baseline subtraction is applied to this view.\n"
+                "- Use Raw to inspect ADC headroom, clipping, drift, and original acquisition quality."
+            )
+
+        if key == "filtered":
+            return (
+                "Filtered ECG view\n"
+                "- Source is the selected raw ADC channel.\n"
+                "- The display applies an in-memory ECG review filter.\n"
+                "- Current default: band-pass 0.5-40 Hz.\n"
+                "- 50 Hz notch is applied only when the 50 Hz checkbox is enabled.\n"
+                "- raw.csv is not overwritten.\n"
+                "- Use Filtered ECG for real waveform calipers when morphology is visible."
+            )
+
+        return (
+            "Teaching Template ECG view\n"
+            "- Source is the filtered ECG, not the raw ADC trace directly.\n"
+            "- R peaks are auto-detected from the filtered signal if needed.\n"
+            "- R timing follows detected R-peak times.\n"
+            "- Local R amplitude is estimated from the filtered signal relative to a pre-QRS median baseline.\n"
+            "- Template uses one stable isoelectric teaching baseline; P/Q/R/S/T timing is feature-guided from the filtered ECG inside valid windows.\n- PR, ST, and TP segments stay flat. Guardrails preserve PR 120-200 ms, compact QRS, ST before T, and QT awareness.\n"
+            "- Template uses one stable isoelectric baseline and keeps PR/ST/TP segments flat.\n"
+            "- This is a teaching schematic tied to the recording; it is not diagnostic/research morphology."
+        )
+
+    def navigation_instruction_text(self):
+        if not self.is_ecg_data_loaded():
+            return (
+                "Navigation\n"
+                "- Load raw.csv or use a saved recording first.\n"
+                "- The plot is locked while no ECG data is loaded."
+            )
+
+        return (
+            "Navigation\n"
+            "- Mouse wheel / horizontal navigation: browse the ECG time window.\n"
+            "- Bottom scrollbar: move through the recording.\n"
+            "- Reset: return to local morphology view.\n"
+            "- Normal drag is for navigation.\n"
+            "- Ctrl + left-drag an existing marker to reposition it."
+        )
+
+    def marker_instruction_text(self):
+        missing = self.required_beat_view_missing()
+
+        return (
+            "Marker workflow\n"
+            "1. Choose Raw, Filtered ECG, or Teaching Template ECG.\n"
+            "2. Detect R peaks for beat reference.\n"
+            "3. Set baseline in Raw/Filtered views; Template baseline is fixed at 0.\n"
+            "4. Place P onset, P peak, P offset.\n"
+            "5. Place QRS onset, Q nadir, R peak, S nadir, J point.\n"
+            "6. Place T onset, T peak, T offset.\n"
+            "7. Beat View unlocks only after all P/QRS/R/T markers are placed.\n"
+            f"Beat View missing: {', '.join(missing) if missing else 'none'}."
+        )
+
+    def update_right_guidance_panel(self):
+        try:
+            parts = [
+                self.current_view_method_text(),
+                "",
+                self.navigation_instruction_text(),
+                "",
+                self.marker_instruction_text(),
+                "",
+                "Safety\n"
+                "- ECG Calipers is for education, validation, and measurement practice.\n"
+                "- It is not a diagnostic ECG interpretation tool."
+            ]
+
+            if self.current_csv_path is not None:
+                try:
+                    fs = self.estimate_fs(self.current_time_s)
+                    parts.insert(
+                        1,
+                        "\nLoaded recording\n"
+                        f"- File: {self.current_csv_path.name}\n"
+                        f"- Samples: {len(self.current_rows)}\n"
+                        f"- Estimated sampling rate: {fs:.2f} Hz"
+                    )
+                except Exception:
+                    pass
+
+            self.info_box.setText("\n".join(parts))
+        except Exception:
+            pass
+
+    def get_calipers_filtered_signal_for_detection(self):
+        # Return ch, t, filtered_y for R detection independent of current view.
+        try:
+            if self.current_time_s is None or not self.current_channel_data:
+                return None, None, None
+
+            ch = self.channel_box.currentText() if hasattr(self, "channel_box") else ""
+            if not ch or ch not in self.current_channel_data:
+                ch = next(iter(self.current_channel_data.keys()))
+
+            t = np.asarray(self.current_time_s, dtype=float)
+            y_raw = np.asarray(self.current_channel_data.get(ch), dtype=float)
+
+            valid = np.isfinite(t) & np.isfinite(y_raw)
+            if valid.sum() < 10:
+                return None, None, None
+
+            t = t[valid]
+            y_raw = y_raw[valid]
+
+            try:
+                y_filtered = self.make_filtered_ecg(
+                    t,
+                    y_raw,
+                    notch=self.notch_box.isChecked() if hasattr(self, "notch_box") else True
+                )
+            except Exception:
+                y_filtered = y_raw - np.nanmedian(y_raw)
+
+            return ch, np.asarray(t, dtype=float), np.asarray(y_filtered, dtype=float)
+        except Exception:
+            return None, None, None
+
+    def silent_detect_r_for_navigation(self):
+        # Detect R peaks without requiring the user to press Detect R.
+        # This uses the same shared detector used elsewhere in ECG Calipers/Analysis.
+        ch, t, y = self.get_calipers_filtered_signal_for_detection()
+        if t is None or y is None:
+            return False
+
+        try:
+            fs = self.estimate_fs(t)
+            result = detect_ecg_r_peaks(t, y, fs)
+            peaks = np.asarray(result.get("peaks", []), dtype=int)
+
+            peaks = peaks[(peaks >= 0) & (peaks < len(t))]
+            if len(peaks) == 0:
+                return False
+
+            self.detected_r_peaks = peaks
+            self.r_peak_detection_result = result
+            return True
+        except Exception as e:
+            try:
+                self.log_message(f"Could not auto-detect R peaks for beat navigation: {e}")
+            except Exception:
+                pass
+            return False
+
+    def get_complete_pqrst_peak_numbers(self):
+        # Return peak numbers whose surrounding time window can contain a full PQRST.
+        # This is a display-navigation rule, not a diagnostic claim.
+        try:
+            if self.current_plot_t is None:
+                return []
+
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                self.silent_detect_r_for_navigation()
+
+            peaks = np.asarray(self.detected_r_peaks, dtype=int)
+            if len(peaks) == 0:
+                return []
+
+            t = np.asarray(self.current_plot_t, dtype=float)
+            if len(t) <= int(np.nanmax(peaks)):
+                t = np.asarray(self.current_time_s, dtype=float)
+
+            valid = np.isfinite(t)
+            if valid.sum() < 10:
+                return []
+
+            t_min = float(np.nanmin(t[valid]))
+            t_max = float(np.nanmax(t[valid]))
+
+            complete = []
+            for n, idx in enumerate(peaks):
+                idx = int(idx)
+                if idx < 0 or idx >= len(t) or not np.isfinite(t[idx]):
+                    continue
+
+                rt = float(t[idx])
+                has_left = (rt - t_min) >= 0.28
+                has_right = (t_max - rt) >= 0.45
+                has_rr_context = (n > 0 and n < len(peaks) - 1)
+
+                if has_left and has_right and has_rr_context:
+                    complete.append(n)
+
+            if not complete:
+                for n, idx in enumerate(peaks):
+                    idx = int(idx)
+                    if 0 <= idx < len(t) and np.isfinite(t[idx]):
+                        rt = float(t[idx])
+                        if (rt - t_min) >= 0.28 and (t_max - rt) >= 0.45:
+                            complete.append(n)
+
+            return complete
+        except Exception:
+            return []
+
+    def choose_first_complete_peak_number(self):
+        complete = self.get_complete_pqrst_peak_numbers()
+        if not complete:
+            return None
+        return int(complete[0])
+
+    def focus_peak_number_as_complete_beat(self, peak_number=None):
+        # Select and display one PQRST complex.
+        try:
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                if not self.silent_detect_r_for_navigation():
+                    return False
+
+            peaks = np.asarray(self.detected_r_peaks, dtype=int)
+            if len(peaks) == 0:
+                return False
+
+            complete = self.get_complete_pqrst_peak_numbers()
+
+            if peak_number is None:
+                if self.selected_peak_number is not None:
+                    peak_number = int(self.selected_peak_number)
+                else:
+                    peak_number = complete[0] if complete else 0
+
+            if complete and int(peak_number) not in complete:
+                peak_number = min(complete, key=lambda n: abs(int(n) - int(peak_number)))
+
+            peak_number = max(0, min(int(peak_number), len(peaks) - 1))
+            self.selected_peak_number = peak_number
+
+            idx = int(peaks[peak_number])
+
+            t = np.asarray(self.current_plot_t, dtype=float)
+            if idx < 0 or idx >= len(t):
+                t = np.asarray(self.current_time_s, dtype=float)
+
+            if idx < 0 or idx >= len(t) or not np.isfinite(t[idx]):
+                return False
+
+            r_time = float(t[idx])
+
+            pre_s = 0.30
+            post_s = 0.50
+
+            if peak_number < len(peaks) - 1:
+                next_idx = int(peaks[peak_number + 1])
+                if 0 <= next_idx < len(t) and np.isfinite(t[next_idx]):
+                    rr_next = float(t[next_idx]) - r_time
+                    if rr_next > 0.25:
+                        post_s = min(post_s, max(0.38, 0.70 * rr_next))
+
+            if peak_number > 0:
+                prev_idx = int(peaks[peak_number - 1])
+                if 0 <= prev_idx < len(t) and np.isfinite(t[prev_idx]):
+                    rr_prev = r_time - float(t[prev_idx])
+                    if rr_prev > 0.25:
+                        pre_s = min(pre_s, max(0.24, 0.40 * rr_prev))
+
+            window_s = max(pre_s + post_s, 0.65)
+            center_time = r_time + (post_s - pre_s) / 2.0
+
+            self.set_view_window(center_time=center_time, window_s=window_s)
+
+            try:
+                total = len(peaks)
+                complete_text = f" | complete {complete.index(peak_number) + 1}/{len(complete)}" if peak_number in complete else ""
+                self.rpeak_status_label.setText(f"R: {r_time:.3f} s | beat {peak_number + 1}/{total}{complete_text}")
+            except Exception:
+                pass
+
+            try:
+                self.update_right_guidance_panel()
+            except Exception:
+                pass
+
+            return True
+        except Exception as e:
+            try:
+                self.log_message(f"Could not focus complete PQRST beat: {e}")
+            except Exception:
+                pass
+            return False
+
+    def auto_focus_first_complete_pqrst_beat(self):
+        # On load/view change, detect R and focus the first complete PQRST complex.
+        try:
+            if self.current_plot_t is None or self.current_plot_y is None:
+                return
+
+            if not self.silent_detect_r_for_navigation():
+                return
+
+            first = self.choose_first_complete_peak_number()
+            if first is None:
+                first = 0
+
+            self.focus_peak_number_as_complete_beat(first)
+        except Exception as e:
+            try:
+                self.log_message(f"Auto beat focus failed: {e}")
+            except Exception:
+                pass
+
+    def reset_view(self):
+        return self.reset_to_selected_complete_beat_clicked()
+
+    def reset_to_selected_complete_beat_clicked(self):
+        # Reset should return to the selected complete PQRST beat, not to a wide old view.
+        try:
+            if self.is_ecg_data_loaded():
+                if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                    self.silent_detect_r_for_navigation()
+
+                target = getattr(self, "selected_peak_number", None)
+                if target is None:
+                    target = self.choose_first_complete_peak_number()
+                if target is None:
+                    target = 0
+
+                if self.focus_peak_number_as_complete_beat(target):
+                    return
+        except Exception as e:
+            try:
+                self.log_message(f"Reset to complete beat failed: {e}")
+            except Exception:
+                pass
+
+        try:
+            self.set_view_window(center_time=None, window_s=0.80)
+        except Exception:
+            pass
 
     def show_planned_latest_recording(self):
         self.info_box.setText(
@@ -436,6 +857,7 @@ class ECGCalipersPanel(QWidget):
         try:
             self.load_raw_csv(path)
             self.refresh_plot()
+            QTimer.singleShot(0, self.auto_focus_first_complete_pqrst_beat)
         except Exception as e:
             self.info_box.setText(f"Could not load raw.csv:\n{e}")
 
@@ -501,7 +923,7 @@ class ECGCalipersPanel(QWidget):
             "",
             "Next development stage: selected beat context view with previous, selected, and next PQRST complexes."
         ]
-        self.info_box.setText("\n".join(lines))
+        self.update_right_guidance_panel()
         self.update_measurement_summary()
 
     def extract_time_s(self, rows, columns):
@@ -786,8 +1208,14 @@ class ECGCalipersPanel(QWidget):
                 self.set_view_window(center_time=center, window_s=window_s)
                 QTimer.singleShot(0, lambda: self.set_view_window(center_time=center, window_s=window_s))
             else:
-                self.set_view_window(center_time=None, window_s=getattr(self, "default_view_seconds", 5.0))
-                QTimer.singleShot(0, lambda: self.set_view_window(center_time=None, window_s=getattr(self, "default_view_seconds", 5.0)))
+                # Default Calipers behavior: open on a complete PQRST beat,
+                # not on the beginning or whole recording.
+                if self.selected_peak_number is not None and getattr(self, "detected_r_peaks", None) is not None and len(self.detected_r_peaks) > 0:
+                    self.focus_peak_number_as_complete_beat(self.selected_peak_number)
+                    QTimer.singleShot(0, lambda: self.focus_peak_number_as_complete_beat(self.selected_peak_number))
+                else:
+                    self.auto_focus_first_complete_pqrst_beat()
+                    QTimer.singleShot(0, self.auto_focus_first_complete_pqrst_beat)
 
         except Exception as e:
             try:
@@ -844,7 +1272,7 @@ class ECGCalipersPanel(QWidget):
 
         if hasattr(self, "baseline_status_label"):
             if key == "template":
-                self.baseline_status_label.setText("Baseline: 0 template fixed")
+                self.baseline_status_label.setText("Baseline: stable isoelectric template")
             elif self.baseline_value is None:
                 self.baseline_status_label.setText("Baseline: --")
             else:
@@ -868,26 +1296,17 @@ class ECGCalipersPanel(QWidget):
 
 
     def make_teaching_template_ecg(self, t):
-        # Derived teaching template ECG.
+        # Constant-baseline, feature-timed Teaching Template ECG.
         #
-        # This is NOT a freehand cartoon and NOT a smoothed ECG.
-        # It is a teaching-only schematic generated from the filtered ECG:
-        # - R timing comes from detected R peaks.
-        # - Q/R/S/P/T peak times are estimated from filtered-signal windows.
-        # - Relative wave amplitudes are taken from the filtered signal, with
-        #   gentle guardrails so one noise spike does not dominate.
-        # - The drawn waves are clean finite teaching shapes.
-        #
-        # Therefore it remains related to the recording, while becoming easier
-        # to use for explaining PQRST waves, intervals, and segments.
+        # This keeps one stable isoelectric teaching baseline across the visible
+        # trace, while using the filtered ECG to choose P/Q/R/S/T timing and
+        # reasonable feature amplitudes.
         t = np.asarray(t, dtype=float)
-        template = np.zeros_like(t, dtype=float)
 
         if len(t) < 3:
-            return template
+            return np.zeros_like(t, dtype=float)
 
         ch = self.channel_box.currentText() if hasattr(self, "channel_box") else "ch1"
-        raw = None
 
         try:
             raw = np.asarray(self.current_channel_data.get(ch, None), dtype=float)
@@ -895,7 +1314,7 @@ class ECGCalipersPanel(QWidget):
             raw = None
 
         if raw is None or len(raw) != len(t):
-            return template
+            return np.zeros_like(t, dtype=float)
 
         try:
             filtered = self.make_filtered_ecg(
@@ -910,7 +1329,10 @@ class ECGCalipersPanel(QWidget):
         finite = np.isfinite(t) & np.isfinite(filtered)
 
         if finite.sum() < 10:
-            return template
+            return np.zeros_like(t, dtype=float)
+
+        template_baseline = float(np.nanmedian(filtered[finite]))
+        template = np.full_like(t, template_baseline, dtype=float)
 
         t_min = float(np.nanmin(t[finite]))
         t_max = float(np.nanmax(t[finite]))
@@ -922,10 +1344,6 @@ class ECGCalipersPanel(QWidget):
             r_indices = np.asarray([], dtype=int)
 
         if len(r_indices) == 0:
-            # If the user has not detected R peaks yet, fall back to a simple
-            # default rhythm so the view is not blank. The log/right panel still
-            # tells the user that R has not been detected.
-            fs = self.estimate_fs(t)
             rr_s = 0.8
             r_times = []
             r = t_min + 0.45
@@ -941,170 +1359,319 @@ class ECGCalipersPanel(QWidget):
             return template
 
         r_times = t[r_indices]
+        rr_values = np.diff(r_times) if len(r_times) >= 2 else np.asarray([], dtype=float)
+        rr_values = rr_values[np.isfinite(rr_values) & (rr_values > 0.30) & (rr_values < 2.50)]
+        rr_default = float(np.nanmedian(rr_values)) if len(rr_values) else 0.80
 
-        if len(r_times) >= 2:
-            rr_values = np.diff(r_times)
-            rr_values = rr_values[np.isfinite(rr_values) & (rr_values > 0.25) & (rr_values < 2.5)]
-            rr_default = float(np.nanmedian(rr_values)) if len(rr_values) else 0.8
-        else:
-            rr_default = 0.8
-
-        def clip_amp(value, low, high):
-            value = float(value)
-            sign = 1.0 if value >= 0 else -1.0
-            mag = abs(value)
-            mag = min(max(mag, low), high)
-            return sign * mag
+        def clamp(value, lo, hi):
+            return min(max(float(value), float(lo)), float(hi))
 
         def window_indices(a, b):
-            mask = finite & (t >= a) & (t <= b)
-            idx = np.where(mask)[0]
-            return idx
+            mask = finite & (t >= float(a)) & (t <= float(b))
+            return np.where(mask)[0]
 
-        def local_max(a, b):
+        def local_median(a, b, fallback):
+            idx = window_indices(a, b)
+            if len(idx) >= 3:
+                vals = filtered[idx]
+                vals = vals[np.isfinite(vals)]
+                if len(vals):
+                    return float(np.nanmedian(vals))
+            return float(fallback)
+
+        def local_feature_same_polarity(a, b, baseline, sign):
             idx = window_indices(a, b)
             if len(idx) == 0:
                 return None, None
-            local = filtered[idx]
-            j = int(np.nanargmax(local))
-            return int(idx[j]), float(local[j])
 
-        def local_min(a, b):
+            vals = filtered[idx] - float(baseline)
+            good = np.isfinite(vals)
+            if good.sum() == 0:
+                return None, None
+
+            idx = idx[good]
+            vals = vals[good]
+
+            try:
+                k = int(np.nanargmax(vals)) if sign >= 0 else int(np.nanargmin(vals))
+                i0 = int(idx[k])
+                return float(t[i0]), float(vals[k])
+            except Exception:
+                return None, None
+
+        def local_feature_opposite(a, b, baseline, sign):
             idx = window_indices(a, b)
             if len(idx) == 0:
                 return None, None
-            local = filtered[idx]
-            j = int(np.nanargmin(local))
-            return int(idx[j]), float(local[j])
 
-        def add_cosine_bump(center, half_width, amp):
-            half_width = max(float(half_width), 0.001)
-            mask = np.abs(t - center) <= half_width
-            if not np.any(mask):
-                return
-            phase = (t[mask] - center) / half_width
-            template[mask] += amp * 0.5 * (1.0 + np.cos(np.pi * phase))
+            vals = filtered[idx] - float(baseline)
+            good = np.isfinite(vals)
+            if good.sum() == 0:
+                return None, None
 
-        def add_triangle(center, half_width, amp):
-            half_width = max(float(half_width), 0.001)
-            mask = np.abs(t - center) <= half_width
-            if not np.any(mask):
+            idx = idx[good]
+            vals = vals[good]
+
+            try:
+                k = int(np.nanargmin(vals)) if sign >= 0 else int(np.nanargmax(vals))
+                i0 = int(idx[k])
+                return float(t[i0]), float(vals[k])
+            except Exception:
+                return None, None
+
+        def local_r_amp(r_time, baseline):
+            idx = window_indices(r_time - 0.030, r_time + 0.030)
+            if len(idx) == 0:
+                return 1.0
+
+            vals = filtered[idx] - float(baseline)
+            vals = vals[np.isfinite(vals)]
+            if len(vals) == 0:
+                return 1.0
+
+            pos = float(np.nanmax(vals))
+            neg = float(np.nanmin(vals))
+            amp = pos if abs(pos) >= abs(neg) else neg
+
+            if not np.isfinite(amp) or abs(amp) < 1e-6:
+                amp = 1.0
+
+            return float(amp)
+
+        def clamp_same_amp(value, sign, low, high, fallback):
+            try:
+                value = float(value)
+            except Exception:
+                return float(fallback)
+            if not np.isfinite(value):
+                return float(fallback)
+            if sign >= 0 and value < 0:
+                return float(fallback)
+            if sign < 0 and value > 0:
+                return float(fallback)
+
+            mag = min(max(abs(value), float(low)), float(high))
+            return (1.0 if sign >= 0 else -1.0) * mag
+
+        def clamp_opposite_amp(value, sign, low, high, fallback):
+            try:
+                value = float(value)
+            except Exception:
+                return float(fallback)
+            if not np.isfinite(value):
+                return float(fallback)
+            if sign >= 0 and value > 0:
+                return float(fallback)
+            if sign < 0 and value < 0:
+                return float(fallback)
+
+            mag = min(max(abs(value), float(low)), float(high))
+            return (-1.0 if sign >= 0 else 1.0) * mag
+
+        def write_line(x0, y0, x1, y1):
+            x0 = float(x0)
+            x1 = float(x1)
+            if x1 <= x0:
                 return
-            phase = np.abs((t[mask] - center) / half_width)
-            template[mask] += amp * np.maximum(0.0, 1.0 - phase)
+
+            mask = finite & (t >= x0) & (t <= x1)
+            if mask.sum() == 0:
+                return
+
+            phase = (t[mask] - x0) / max(x1 - x0, 1e-9)
+            template[mask] = float(y0) + phase * (float(y1) - float(y0))
+
+        def write_flat(x0, x1):
+            write_line(x0, template_baseline, x1, template_baseline)
+
+        def write_cosine(x0, y0, xp, yp, x1, y1):
+            x0 = float(x0)
+            xp = float(xp)
+            x1 = float(x1)
+
+            if not (x0 < xp < x1):
+                write_line(x0, y0, x1, y1)
+                return
+
+            left = finite & (t >= x0) & (t <= xp)
+            if left.sum() > 0:
+                phase = (t[left] - x0) / max(xp - x0, 1e-9)
+                s = 0.5 * (1.0 - np.cos(np.pi * phase))
+                template[left] = float(y0) + s * (float(yp) - float(y0))
+
+            right = finite & (t > xp) & (t <= x1)
+            if right.sum() > 0:
+                phase = (t[right] - xp) / max(x1 - xp, 1e-9)
+                s = 0.5 * (1.0 - np.cos(np.pi * phase))
+                template[right] = float(yp) + s * (float(y1) - float(yp))
+
+        def write_polyline(points):
+            clean = []
+            for x, y in points:
+                try:
+                    x = float(x)
+                    y = float(y)
+                except Exception:
+                    continue
+                if np.isfinite(x) and np.isfinite(y):
+                    clean.append((x, y))
+
+            clean = sorted(clean, key=lambda p: p[0])
+            for (x0, y0), (x1, y1) in zip(clean[:-1], clean[1:]):
+                write_line(x0, y0, x1, y1)
+
+        P_DUR = 0.080
+        P_DUR_MIN = 0.060
+        PR_MIN = 0.120
+        PR_MAX = 0.200
+        PR_TARGET = 0.160
+        PR_SEG_MIN = 0.040
+        QRS_MAX = 0.100
+        R_AFTER_QRS_ONSET = 0.045
+        ST_MIN = 0.060
+        ST_TARGET = 0.080
+        QT_MIN = 0.320
+        QT_MAX = 0.440
+        QTC_TEACHING = 0.400
 
         for i, r_idx in enumerate(r_indices):
-            r_time = float(t[r_idx])
+            r_time = float(t[int(r_idx)])
+
+            pre_rr = float(r_time - float(t[r_indices[i - 1]])) if i > 0 else rr_default
+            post_rr = float(float(t[r_indices[i + 1]]) - r_time) if i < len(r_indices) - 1 else rr_default
+
+            pre_rr = clamp(pre_rr, 0.45, 1.50)
+            post_rr = clamp(post_rr, 0.45, 1.50)
+            rr_local = clamp(min(pre_rr, post_rr), 0.45, 1.50)
+
+            qrs_onset = r_time - R_AFTER_QRS_ONSET
+            local_baseline = local_median(qrs_onset - 0.100, qrs_onset - 0.030, template_baseline)
+
+            r_amp_real = local_r_amp(r_time, local_baseline)
+            r_sign = 1.0 if r_amp_real >= 0 else -1.0
+            r_mag = max(abs(r_amp_real), 1.0)
+            r_y = template_baseline + r_amp_real
+
+            q_time, q_amp_real = local_feature_opposite(
+                qrs_onset + 0.006,
+                min(r_time - 0.006, qrs_onset + 0.040),
+                local_baseline,
+                r_sign
+            )
+            if q_time is None:
+                q_time = qrs_onset + 0.020
+                q_amp_real = -0.12 * r_mag * r_sign
+            q_amp = clamp_opposite_amp(q_amp_real, r_sign, 0.04 * r_mag, 0.22 * r_mag, -0.12 * r_mag * r_sign)
+
+            s_time, s_amp_real = local_feature_opposite(
+                max(r_time + 0.006, qrs_onset + 0.050),
+                qrs_onset + QRS_MAX,
+                local_baseline,
+                r_sign
+            )
+            if s_time is None:
+                s_time = qrs_onset + 0.075
+                s_amp_real = -0.25 * r_mag * r_sign
+            s_amp = clamp_opposite_amp(s_amp_real, r_sign, 0.08 * r_mag, 0.35 * r_mag, -0.25 * r_mag * r_sign)
+
+            j_point = max(float(s_time) + 0.020, qrs_onset + 0.080)
+            j_point = min(j_point, qrs_onset + QRS_MAX)
+
+            p_peak_start = qrs_onset - PR_MAX + 0.030
+            p_peak_end = qrs_onset - PR_MIN + 0.020
+            p_peak_end = min(p_peak_end, qrs_onset - PR_SEG_MIN - P_DUR_MIN / 2.0)
+
+            p_peak, p_amp_real = local_feature_same_polarity(p_peak_start, p_peak_end, local_baseline, r_sign)
+            if p_peak is None:
+                p_peak = qrs_onset - PR_TARGET + P_DUR / 2.0
+                p_amp_real = 0.10 * r_mag * r_sign
+
+            p_peak = clamp(p_peak, qrs_onset - PR_MAX + P_DUR_MIN / 2.0, qrs_onset - PR_SEG_MIN - P_DUR_MIN / 2.0)
+            p_amp = clamp_same_amp(p_amp_real, r_sign, 0.04 * r_mag, 0.16 * r_mag, 0.10 * r_mag * r_sign)
+            p_onset = p_peak - P_DUR / 2.0
+            p_offset = p_peak + P_DUR / 2.0
+
+            if p_offset > qrs_onset - PR_SEG_MIN:
+                p_offset = qrs_onset - PR_SEG_MIN
+                p_onset = p_offset - P_DUR
+                p_peak = p_onset + P_DUR / 2.0
 
             if i > 0:
-                pre_rr = r_time - float(t[r_indices[i - 1]])
-            else:
-                pre_rr = rr_default
+                prev_r = float(t[r_indices[i - 1]])
+                earliest_p = prev_r + min(0.240, 0.36 * pre_rr)
+                if p_onset < earliest_p:
+                    shift = earliest_p - p_onset
+                    p_onset += shift
+                    p_peak += shift
+                    p_offset += shift
+                    if p_offset > qrs_onset - PR_SEG_MIN:
+                        p_offset = qrs_onset - PR_SEG_MIN
+                        p_onset = p_offset - P_DUR
+                        p_peak = p_onset + P_DUR / 2.0
+
+            draw_p = p_onset < p_peak < p_offset < qrs_onset - PR_SEG_MIN + 1e-9
+
+            qt_interval = clamp(QTC_TEACHING * np.sqrt(rr_local), QT_MIN, QT_MAX)
+            qt_offset = qrs_onset + qt_interval
+
+            t_peak_start = j_point + ST_TARGET + 0.030
+            t_peak_end = min(qt_offset - 0.080, j_point + 0.320)
 
             if i < len(r_indices) - 1:
-                post_rr = float(t[r_indices[i + 1]]) - r_time
-            else:
-                post_rr = rr_default
+                next_r = float(t[r_indices[i + 1]])
+                next_qrs_onset = next_r - R_AFTER_QRS_ONSET
+                next_p_onset_est = next_qrs_onset - PR_TARGET
+                t_peak_end = min(t_peak_end, next_p_onset_est - 0.120)
 
-            if not np.isfinite(pre_rr) or pre_rr <= 0.25 or pre_rr > 2.5:
-                pre_rr = rr_default
-            if not np.isfinite(post_rr) or post_rr <= 0.25 or post_rr > 2.5:
-                post_rr = rr_default
+            if t_peak_end <= t_peak_start:
+                t_peak_end = t_peak_start + 0.060
 
-            # Local baseline from pre-QRS segment.
-            base_idx = window_indices(r_time - min(0.30, 0.45 * pre_rr), r_time - 0.09)
-            if len(base_idx) >= 5:
-                baseline = float(np.nanmedian(filtered[base_idx]))
-            else:
-                baseline = 0.0
+            t_peak, t_amp_real = local_feature_same_polarity(t_peak_start, t_peak_end, local_baseline, r_sign)
+            if t_peak is None:
+                t_peak = j_point + 0.200
+                t_amp_real = 0.26 * r_mag * r_sign
 
-            # R peak: use local max close to detected R.
-            r_peak_idx, r_value = local_max(r_time - 0.030, r_time + 0.030)
-            if r_peak_idx is None:
-                r_peak_idx = int(r_idx)
-                r_value = float(filtered[r_idx])
+            t_peak = clamp(t_peak, t_peak_start, t_peak_end)
+            t_amp = clamp_same_amp(t_amp_real, r_sign, 0.10 * r_mag, 0.30 * r_mag, 0.24 * r_mag * r_sign)
 
-            r_amp = float(r_value - baseline)
-            if abs(r_amp) < 1e-6:
-                r_amp = 1.0
-
-            # Use sign of R. Most ECG teaching examples are positive R.
-            r_sign = 1.0 if r_amp >= 0 else -1.0
-            r_mag = abs(r_amp)
-
-            # Q and S: local minima around R.
-            q_idx, q_val = local_min(r_time - 0.070, r_time - 0.010)
-            s_idx, s_val = local_min(r_time + 0.010, r_time + 0.090)
-
-            if q_idx is None:
-                q_time = r_time - 0.035
-                q_amp = -0.15 * r_mag * r_sign
-            else:
-                q_time = float(t[q_idx])
-                q_amp = clip_amp(q_val - baseline, 0.05 * r_mag, 0.35 * r_mag)
-
-            if s_idx is None:
-                s_time = r_time + 0.040
-                s_amp = -0.25 * r_mag * r_sign
-            else:
-                s_time = float(t[s_idx])
-                s_amp = clip_amp(s_val - baseline, 0.08 * r_mag, 0.45 * r_mag)
-
-            # P peak: search the real filtered signal before QRS.
-            p_start = r_time - min(0.36, 0.55 * pre_rr)
-            p_end = r_time - 0.085
-            p_idx, p_val = local_max(p_start, p_end)
-
-            if p_idx is None:
-                p_time = r_time - min(0.20, 0.28 * pre_rr)
-                p_amp = 0.12 * r_mag * r_sign
-            else:
-                p_time = float(t[p_idx])
-                p_amp = p_val - baseline
-                # Guardrails: preserve relation but keep teaching shape readable.
-                if abs(p_amp) < 0.03 * r_mag:
-                    p_amp = 0.08 * r_mag * r_sign
-                else:
-                    p_amp = clip_amp(p_amp, 0.04 * r_mag, 0.25 * r_mag)
-
-            # T peak: search after QRS and before next P.
-            t_start = r_time + 0.10
-            t_end = r_time + min(0.52, 0.68 * post_rr)
-            t_idx, t_val = local_max(t_start, t_end)
-
-            if t_idx is None:
-                t_time = r_time + min(0.28, 0.36 * post_rr)
-                t_amp = 0.28 * r_mag * r_sign
-            else:
-                t_time = float(t[t_idx])
-                t_amp = t_val - baseline
-                if abs(t_amp) < 0.05 * r_mag:
-                    t_amp = 0.25 * r_mag * r_sign
-                else:
-                    t_amp = clip_amp(t_amp, 0.08 * r_mag, 0.45 * r_mag)
-
-            # Finite didactic widths. These are narrower at faster rates.
-            p_half = min(0.060, max(0.035, 0.075 * pre_rr))
-            t_half = min(0.120, max(0.065, 0.145 * post_rr))
-
-            # Avoid overlap with QRS and next P.
-            qrs_left_guard = r_time - 0.075
-            if p_time + p_half > qrs_left_guard:
-                p_half = max(0.025, qrs_left_guard - p_time)
+            t_onset = max(j_point + ST_MIN, t_peak - 0.105)
+            t_offset = min(qt_offset, t_peak + 0.135)
 
             if i < len(r_indices) - 1:
-                next_r_time = float(t[r_indices[i + 1]])
-                next_p_start = next_r_time - min(0.36, 0.55 * post_rr)
-                allowed_t_half = next_p_start - t_time - 0.025
-                if allowed_t_half < t_half:
-                    t_half = max(0.050, allowed_t_half)
+                next_r = float(t[r_indices[i + 1]])
+                next_qrs_onset = next_r - R_AFTER_QRS_ONSET
+                next_p_onset_est = next_qrs_onset - PR_TARGET
+                t_offset = min(t_offset, next_p_onset_est - 0.030)
 
-            # Draw template in filtered ADC-count deviation units.
-            add_cosine_bump(p_time, p_half, p_amp)
-            add_triangle(q_time, 0.018, q_amp)
-            add_triangle(r_time, 0.022, r_mag * r_sign)
-            add_triangle(s_time, 0.024, s_amp)
-            add_cosine_bump(t_time, t_half, t_amp)
+            if t_offset <= t_peak + 0.080:
+                t_offset = t_peak + 0.100
+            if t_onset >= t_peak - 0.050:
+                t_onset = t_peak - 0.080
+            if t_onset < j_point + ST_MIN:
+                t_onset = j_point + ST_MIN
+
+            if draw_p:
+                write_flat(max(t_min, p_onset - 0.030), p_onset)
+                write_cosine(p_onset, template_baseline, p_peak, template_baseline + p_amp, p_offset, template_baseline)
+                write_flat(p_offset, qrs_onset)
+
+            write_polyline([
+                (qrs_onset, template_baseline),
+                (float(q_time), template_baseline + q_amp),
+                (r_time, r_y),
+                (float(s_time), template_baseline + s_amp),
+                (j_point, template_baseline),
+            ])
+
+            write_flat(j_point, t_onset)
+            write_cosine(t_onset, template_baseline, t_peak, template_baseline + t_amp, t_offset, template_baseline)
+
+            if i < len(r_indices) - 1:
+                next_qrs_onset = float(t[r_indices[i + 1]]) - R_AFTER_QRS_ONSET
+                next_p_onset_est = next_qrs_onset - PR_TARGET
+                write_flat(t_offset, max(t_offset, next_p_onset_est))
+            else:
+                write_flat(t_offset, min(t_max, t_offset + 0.160))
 
         return template
 
@@ -2133,6 +2700,266 @@ class ECGCalipersPanel(QWidget):
             pass
 
 
+    def apply_opl_calipers_theme(self):
+        # Black-Gold Opal theme alignment for ECG Calipers.
+        # Same visual vocabulary as Analysis/Results/Compare/Machine:
+        # 10pt Segoe UI / Arial, black background, muted gold, graphite borders.
+        try:
+            self.setStyleSheet(
+                """
+                QWidget {
+                    background-color: #050608;
+                    color: #F2F2F4;
+                    font-family: Segoe UI, Arial;
+                    font-size: 10pt;
+                }
+
+                QLabel {
+                    color: #F2F2F4;
+                    background-color: transparent;
+                }
+
+                QGroupBox {
+                    background-color: #0E1218;
+                    border: 1px solid #2D333F;
+                    border-radius: 8px;
+                    margin-top: 10px;
+                    padding-top: 9px;
+                    color: #D4AF37;
+                    font-weight: 400;
+                }
+
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    subcontrol-position: top left;
+                    left: 9px;
+                    padding: 0px 6px;
+                    background-color: #0E1218;
+                    color: #D4AF37;
+                    font-weight: 400;
+                }
+
+                QPushButton {
+                    background-color: #10141B;
+                    color: #F2F2F4;
+                    border: 1px solid #2D333F;
+                    border-radius: 5px;
+                    padding: 5px 10px;
+                    min-height: 22px;
+                }
+
+                QPushButton:hover {
+                    background-color: #0E1218;
+                    border: 1px solid #D4AF37;
+                    color: #D4AF37;
+                }
+
+                QPushButton:pressed {
+                    background-color: #050608;
+                    border: 1px solid #D4AF37;
+                    color: #F2F2F4;
+                }
+
+                QPushButton:disabled {
+                    background-color: #101219;
+                    color: #686D7A;
+                    border: 1px solid #262A34;
+                }
+
+                QComboBox, QLineEdit {
+                    background-color: #030406;
+                    color: #F2F2F4;
+                    border: 1px solid #2D333F;
+                    border-radius: 4px;
+                    padding: 4px 6px;
+                    min-height: 22px;
+                }
+
+                QComboBox:hover, QLineEdit:hover {
+                    border: 1px solid #D4AF37;
+                }
+
+                QTextEdit {
+                    background-color: #080B10;
+                    color: #F2F2F4;
+                    border: 1px solid #2D333F;
+                    border-radius: 5px;
+                    padding: 6px;
+                    selection-background-color: #D4AF37;
+                    selection-color: #000000;
+                }
+
+                QCheckBox {
+                    color: #F2F2F4;
+                    spacing: 6px;
+                    background-color: transparent;
+                }
+
+                QCheckBox::indicator {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 2px;
+                    border: 1px solid #4A4F5C;
+                    background-color: #08090D;
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: #50C878;
+                    border: 1px solid #50C878;
+                }
+
+                QSplitter::handle {
+                    background-color: #2D333F;
+                }
+
+                QSplitter::handle:hover {
+                    background-color: #D4AF37;
+                }
+
+                QScrollBar:vertical {
+                    background: #101219;
+                    width: 12px;
+                    margin: 0px;
+                }
+
+                QScrollBar::handle:vertical {
+                    background: #2D333F;
+                    min-height: 25px;
+                    border-radius: 4px;
+                }
+
+                QScrollBar::handle:vertical:hover {
+                    background: #D4AF37;
+                }
+
+                QScrollBar:horizontal {
+                    background: #101219;
+                    height: 12px;
+                    margin: 0px;
+                }
+
+                QScrollBar::handle:horizontal {
+                    background: #2D333F;
+                    min-width: 25px;
+                    border-radius: 4px;
+                }
+
+                QScrollBar::handle:horizontal:hover {
+                    background: #D4AF37;
+                }
+                """
+            )
+        except Exception:
+            pass
+
+        green_buttons = {
+            "Use Latest", "Load Folder", "Load raw.csv",
+            "Detect R",
+            "P onset", "P peak", "P offset", "Clear P",
+            "QRS onset", "Q nadir", "S nadir", "J point", "Clear QRS",
+        }
+
+        gold_buttons = {
+            "R peak", "T onset", "T peak", "T offset", "Clear T", "Beat View",
+        }
+
+        green_style = (
+            "QPushButton { background-color: #10141B; color: #F2F2F4; "
+            "border: 1px solid #2D333F; border-radius: 5px; padding: 5px 10px; min-height: 22px; }"
+            "QPushButton:hover { background-color: #0E1218; color: #50C878; border: 1px solid #50C878; }"
+            "QPushButton:pressed { background-color: #050608; color: #F2F2F4; border: 1px solid #50C878; }"
+            "QPushButton:disabled { background-color: #101219; color: #686D7A; border: 1px solid #262A34; }"
+        )
+
+        gold_style = (
+            "QPushButton { background-color: #10141B; color: #F2F2F4; "
+            "border: 1px solid #2D333F; border-radius: 5px; padding: 5px 10px; min-height: 22px; }"
+            "QPushButton:hover { background-color: #0E1218; color: #D4AF37; border: 1px solid #D4AF37; }"
+            "QPushButton:pressed { background-color: #050608; color: #F2F2F4; border: 1px solid #D4AF37; }"
+            "QPushButton:disabled { background-color: #101219; color: #686D7A; border: 1px solid #262A34; }"
+        )
+
+        try:
+            from PyQt5.QtWidgets import QPushButton
+            for btn in self.findChildren(QPushButton):
+                txt = btn.text().strip()
+                if txt in green_buttons:
+                    btn.setStyleSheet(green_style)
+                elif txt in gold_buttons:
+                    btn.setStyleSheet(gold_style)
+        except Exception:
+            pass
+
+        try:
+            self.configure_calipers_plot_theme()
+        except Exception:
+            pass
+
+    def configure_calipers_plot_theme(self):
+        try:
+            self.plot.setBackground("#020304")
+            self.plot.showGrid(x=True, y=True, alpha=0.28)
+
+            try:
+                title_text = self.plot.getPlotItem().titleLabel.text
+                self.plot.getPlotItem().setTitle(title_text, color="#D4AF37", size="10pt")
+            except Exception:
+                pass
+
+            for axis_name in ["left", "bottom"]:
+                try:
+                    axis = self.plot.getAxis(axis_name)
+                    axis.setPen(pg.mkPen("#C6CBD5"))
+                    axis.setTextPen(pg.mkPen("#C6CBD5"))
+                except Exception:
+                    pass
+
+            try:
+                self.plot.setMenuEnabled(False)
+                self.plot.hideButtons()
+                vb = self.plot.getViewBox()
+                vb.setMenuEnabled(False)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
+    def keyPressEvent(self, event):
+        try:
+            key = event.key()
+            if key == Qt.Key_Left:
+                self.previous_beat_clicked()
+                return
+            if key == Qt.Key_Right:
+                self.next_beat_clicked()
+                return
+        except Exception:
+            pass
+
+        try:
+            super().keyPressEvent(event)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        try:
+            super().showEvent(event)
+        except Exception:
+            pass
+
+        try:
+            self.apply_opl_calipers_theme()
+        except Exception:
+            pass
+        try:
+            self.update_beat_view_button_state()
+            self.update_right_guidance_panel()
+            self.set_plot_interaction_loaded_state()
+        except Exception:
+            pass
+
+
     def refresh_plot(self):
         self.ensure_p_marker_drag_signals()
         old_x_range = self.get_x_range_for_refresh()
@@ -2200,6 +3027,10 @@ class ECGCalipersPanel(QWidget):
         self.activate_view_measurements()
         self.activate_view_measurements()
         self.plot.clear()
+        try:
+            self.configure_calipers_plot_theme()
+        except Exception:
+            pass
         self.plot_current_ecg_trace(t, y)
         self.draw_baseline_line()
         self.draw_landmark_markers()
@@ -2209,10 +3040,16 @@ class ECGCalipersPanel(QWidget):
             self.rebuild_caliper_measurements_panel()
         except Exception:
             pass
+
+        try:
+            self.update_beat_view_button_state()
+            self.update_right_guidance_panel()
+        except Exception:
+            pass
         self.plot.setLabel("bottom", "Time", units="s")
         self.plot.setLabel("left", "Amplitude (raw ADC units; not mV)")
         self.plot.getAxis("left").enableAutoSIPrefix(False)
-        self.plot.getPlotItem().setTitle(f"ECG Calipers: {ch} | {self.current_display_label}")
+        self.plot.getPlotItem().setTitle(f"ECG Calipers: {ch} | {self.current_display_label}", color="#D4AF37", size="10pt")
 
         duration = float(t[-1] - t[0])
         fs = self.estimate_fs(t)
@@ -2235,6 +3072,12 @@ class ECGCalipersPanel(QWidget):
         )
         self.apply_post_refresh_window(old_x_range)
         self.draw_template_opal_markers()
+        try:
+            self.update_beat_view_button_state()
+            self.update_right_guidance_panel()
+            self.set_plot_interaction_loaded_state()
+        except Exception:
+            pass
 
     def detect_r_peaks_clicked(self):
         # Detect R peaks on the currently displayed signal using the shared
@@ -2749,8 +3592,8 @@ class ECGCalipersPanel(QWidget):
                 lines.append("2. R peaks are auto-detected if needed.")
                 lines.append("3. R timing = detected R-peak times.")
                 lines.append("4. R amplitude = local filtered R peak minus pre-QRS median baseline.")
-                lines.append("5. P/Q/S/T are finite teaching shapes placed relative to R and RR.")
-                lines.append("6. Relative amplitudes: P≈0.12R, Q≈-0.12R, S≈-0.25R, T≈0.30R.")
+                lines.append("5. Template is baseline-flat and feature-anchored: P peak, Q/R/S, and T peak use filtered ECG features inside valid windows.")
+                lines.append("6. Isoelectric PR, ST, and TP segments are drawn flat on a local pre-QRS baseline; guardrails preserve PR 120-200 ms, compact QRS, ST before T, and QT awareness.")
                 lines.append("7. Baseline is fixed at 0 template units.")
                 lines.append("")
         except Exception:
@@ -2928,6 +3771,10 @@ class ECGCalipersPanel(QWidget):
 
         text = "\n".join(lines)
         self.set_caliper_measurements_text_direct(text)
+        try:
+            self.update_beat_view_button_state()
+        except Exception:
+            pass
 
 
     def refresh_all_caliper_measurements(self):
@@ -3318,6 +4165,19 @@ class ECGCalipersPanel(QWidget):
             lines.append(f"T duration: {(float(t_off[0]) - float(t_on[0])) * 1000.0:.1f} ms")
 
     def show_individual_beat_visualizer(self):
+        missing = self.required_beat_view_missing()
+        if missing:
+            try:
+                self.log_message("Beat View requires all P/QRS/R/T markers first: " + ", ".join(missing))
+            except Exception:
+                pass
+            try:
+                self.update_beat_view_button_state()
+                self.update_right_guidance_panel()
+            except Exception:
+                pass
+            return
+
         # Focused beat plot. x-axis is relative to P onset: P onset = 0 ms.
         try:
             p_on = self.find_any_p_landmark_xy("onset")
@@ -3441,7 +4301,7 @@ class ECGCalipersPanel(QWidget):
         root.addLayout(body, stretch=1)
 
         plot = pg.PlotWidget()
-        plot.setBackground("#0B1020")
+        plot.setBackground("#020304")
         plot.showGrid(x=True, y=True, alpha=0.35)
         plot.setLabel("bottom", "Time relative to P onset", units="ms")
         plot.setLabel("left", "Amplitude", units="ADC / template units")
@@ -4053,35 +4913,62 @@ class ECGCalipersPanel(QWidget):
             self.info_box.setText(f"Could not select nearest R peak:\n{e}")
 
     def previous_beat_clicked(self):
-        if len(self.detected_r_peaks) == 0:
-            self.info_box.setText("Detect R peaks first.")
-            return
+        try:
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                self.silent_detect_r_for_navigation()
 
-        if self.selected_peak_number is None:
-            self.selected_peak_number = 0
-        else:
-            self.selected_peak_number = max(0, int(self.selected_peak_number) - 1)
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                return
 
-        self.redraw_plot_with_r_peaks(preserve_view=False)
-        self.center_view_on_selected_peak()
-        self.update_selected_beat_status()
+            complete = self.get_complete_pqrst_peak_numbers()
+            current = self.selected_peak_number
+
+            if complete:
+                if current is None:
+                    target = complete[0]
+                else:
+                    smaller = [n for n in complete if int(n) < int(current)]
+                    target = smaller[-1] if smaller else complete[0]
+            else:
+                current = int(current or 0)
+                target = max(0, current - 1)
+
+            self.focus_peak_number_as_complete_beat(target)
+        except Exception as e:
+            try:
+                self.log_message(f"Previous beat navigation failed: {e}")
+            except Exception:
+                pass
+
 
     def next_beat_clicked(self):
-        if len(self.detected_r_peaks) == 0:
-            self.info_box.setText("Detect R peaks first.")
-            return
+        try:
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                self.silent_detect_r_for_navigation()
 
-        if self.selected_peak_number is None:
-            self.selected_peak_number = 0
-        else:
-            self.selected_peak_number = min(
-                len(self.detected_r_peaks) - 1,
-                int(self.selected_peak_number) + 1
-            )
+            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+                return
 
-        self.redraw_plot_with_r_peaks(preserve_view=False)
-        self.center_view_on_selected_peak()
-        self.update_selected_beat_status()
+            complete = self.get_complete_pqrst_peak_numbers()
+            current = self.selected_peak_number
+
+            if complete:
+                if current is None:
+                    target = complete[0]
+                else:
+                    larger = [n for n in complete if int(n) > int(current)]
+                    target = larger[0] if larger else complete[-1]
+            else:
+                current = int(current or 0)
+                target = min(len(self.detected_r_peaks) - 1, current + 1)
+
+            self.focus_peak_number_as_complete_beat(target)
+        except Exception as e:
+            try:
+                self.log_message(f"Next beat navigation failed: {e}")
+            except Exception:
+                pass
+
 
     def update_selected_beat_status(self):
         if len(self.detected_r_peaks) == 0 or self.selected_peak_number is None:

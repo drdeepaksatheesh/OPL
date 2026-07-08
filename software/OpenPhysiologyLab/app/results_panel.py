@@ -464,7 +464,7 @@ class ResultsPanel(QWidget):
             <body>
                 <div class='title'>No Results Loaded</div>
                 <div class='note'>
-                    Save an analysis from the Analysis tab, then click
+                    This tab starts fresh. Save an analysis from the Analysis tab, then click
                     <span class='label'>Load Latest Saved Analysis</span>.
                     You can also manually load an analysis_report.json file.
                 </div>
@@ -480,11 +480,16 @@ class ResultsPanel(QWidget):
         except Exception:
             pass
 
+        # Results tab should open fresh, like the other workflow tabs.
+        # It should not silently load the previous/latest recording.
+        # User can explicitly click "Load Latest Saved Analysis" when needed.
         if self.current_report_path is None:
             try:
-                self.load_latest_report(silent=True)
+                self.show_empty_message()
+                self.path_label.setText("No report loaded")
             except Exception:
                 pass
+
 
     def load_report_clicked(self):
         path, _ = QFileDialog.getOpenFileName(

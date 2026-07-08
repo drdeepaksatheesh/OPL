@@ -44,8 +44,8 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
 
         self.tabs.addTab(self.setup_panel, "Setup")
         self.tabs.addTab(self.recorder_panel, "Recorder")
-        self.tabs.addTab(self.analysis_panel, "Analysis")
         self.tabs.addTab(self.ecg_calipers_panel, "ECG Calipers")
+        self.tabs.addTab(self.analysis_panel, "Analysis")
         self.tabs.addTab(self.results_panel, "Results")
         self.tabs.addTab(self.compare_panel, "Compare")
         self.tabs.addTab(self.machine_panel, "Machine")

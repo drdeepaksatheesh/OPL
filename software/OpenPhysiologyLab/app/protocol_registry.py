@@ -81,6 +81,46 @@ FALLBACK_ECG_PROTOCOLS = {
         ),
     },
 
+    "ECG_WAVEFORM_STUDY_60S": {
+        "signal_type": "ECG",
+        "protocol_name": "ECG_WAVEFORM_STUDY_60S",
+        "display_name": "ECG Waveform Study / Calipers - 60 s",
+        "description": (
+            "One-minute ECG optimized for PQRST waveform teaching and manual caliper placement. "
+            "Uses 1000 Hz target sampling to improve onset/offset timing visibility."
+        ),
+        "duration_seconds": 60,
+        "duration_text": "01:00:00",
+        "sample_rate_hz": 1000,
+        "channels": 1,
+        "electrode_placement": "RA-LL limb ECG / ECG waveform study",
+        "lead_label": "Lead-II-like",
+        "lead_config_key": "RA_LL_LIMB_AXIS_NPG_PRACTICAL",
+        "measurement_axis": "Right wrist/right arm to left leg limb axis",
+        "standard_status": (
+            "Non-diagnostic NPG Lite practical polarity configuration. "
+            "Useful for waveform teaching, timing, calipers, and validation; not certified diagnostic Lead II."
+        ),
+        "filter": {
+            "low_hz": 0.5,
+            "high_hz": 40.0,
+            "notch_50hz": True,
+        },
+        "evaluation_focus": [
+            "ADC baseline",
+            "low/high clipping",
+            "PQRST morphology visibility",
+            "R-peak timing usability",
+            "manual caliper landmark visibility",
+        ],
+        "protocol_notes": (
+            "Use this after ECG headroom is acceptable. Recommended electrode documentation: "
+            "A0P->RA/right wrist, A0N->LL/left leg, REF->RL/right leg in the current local NPG Lite setup. "
+            "Record quietly at rest, avoid cable tug, document posture, and verify that raw.csv is not clipped. "
+            "Filtered ECG and Teaching Template ECG are display/analysis views derived from raw.csv; raw.csv remains unchanged."
+        ),
+    },
+
     "ECG_RESTING_5MIN": {
         "signal_type": "ECG",
         "protocol_name": "ECG_RESTING_5MIN",
