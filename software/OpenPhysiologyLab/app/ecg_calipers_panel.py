@@ -10,7 +10,8 @@ from analysis.peak_detection import detect_ecg_r_peaks
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout,
-    QGroupBox, QTextEdit, QFileDialog, QComboBox, QCheckBox, QSplitter, QScrollBar
+    QGroupBox, QTextEdit, QFileDialog, QComboBox, QCheckBox, QSplitter, QScrollBar,
+    QDoubleSpinBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -42,6 +43,7 @@ class ECGCalipersPanel(QWidget):
         self.current_plot_t = None
         self.current_plot_y = None
         self.current_template_overlay_y = None
+        self.current_teaching_template_y = None
         self.default_view_seconds = 5.0
 
         self.detected_r_peaks = np.array([], dtype=int)
@@ -129,7 +131,7 @@ class ECGCalipersPanel(QWidget):
         controls_layout.addWidget(QLabel("View"))
         self.view_box = QComboBox()
         self.view_box.setMinimumWidth(150)
-        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz", "Teaching Template ECG"])
+        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz"])
         self.view_box.currentIndexChanged.connect(self.refresh_plot)
         controls_layout.addWidget(self.view_box)
 
@@ -138,18 +140,12 @@ class ECGCalipersPanel(QWidget):
         self.notch_box.stateChanged.connect(self.refresh_plot)
         controls_layout.addWidget(self.notch_box)
 
-        self.template_overlay_box = QCheckBox("Overlay filtered")
-        self.template_overlay_box.setChecked(False)
-        self.template_overlay_box.setToolTip(
-            "In Teaching Template ECG view, overlay the filtered ECG behind the template."
-        )
-        self.template_overlay_box.stateChanged.connect(self.refresh_plot)
-        controls_layout.addWidget(self.template_overlay_box)
 
         self.reset_view_btn = QPushButton("Reset")
         self.reset_view_btn.clicked.connect(self.reset_to_selected_complete_beat_clicked)
         # Reset in ECG Calipers returns to selected complete PQRST beat.
         controls_layout.addWidget(self.reset_view_btn)
+
 
         rpeak_group, rpeak_layout = make_caliper_group("R Reference")
 
@@ -512,7 +508,7 @@ class ECGCalipersPanel(QWidget):
                 "- Current default: band-pass 0.5-40 Hz.\n"
                 "- 50 Hz notch is applied only when the 50 Hz checkbox is enabled.\n"
                 "- raw.csv is not overwritten.\n"
-                "- Use Filtered ECG for real waveform calipers when morphology is visible."
+                "- This is the main real waveform for calipers and Beat View."
             )
 
         return (
@@ -521,8 +517,8 @@ class ECGCalipersPanel(QWidget):
             "- R peaks are auto-detected from the filtered signal if needed.\n"
             "- R timing follows detected R-peak times.\n"
             "- Local R amplitude is estimated from the filtered signal relative to a pre-QRS median baseline.\n"
-            "- Template uses one stable isoelectric teaching baseline; P/Q/R/S/T timing is feature-guided from the filtered ECG inside valid windows.\n- PR, ST, and TP segments stay flat. Guardrails preserve PR 120-200 ms, compact QRS, ST before T, and QT awareness.\n"
-            "- Template uses one stable isoelectric baseline and keeps PR/ST/TP segments flat.\n"
+            "- Template uses one stable isoelectric teaching baseline; P/Q/R/S/T timing is feature-guided from the filtered ECG inside valid windows.\n- PR, ST, and TP segments stay flat. Guardrails preserve PR 120-200 ms, compact QRS, ST before T, and QT awareness.\n- TT X / TT Y manually align the Teaching Template over the filtered ECG; this does not modify raw.csv or the filtered trace.\n"
+            "- Yellow trace is filtered ECG for measurement; pale green TT guide is movable and teaching-only.\n"
             "- This is a teaching schematic tied to the recording; it is not diagnostic/research morphology."
         )
 
@@ -548,9 +544,9 @@ class ECGCalipersPanel(QWidget):
 
         return (
             "Marker workflow\n"
-            "1. Choose Raw, Filtered ECG, or Teaching Template ECG.\n"
+            "1. Choose Raw or Filtered ECG.\n"
             "2. Detect R peaks for beat reference.\n"
-            "3. Set baseline in Raw/Filtered views; Template baseline is fixed at 0.\n"
+            "3. Set baseline if needed.\n"
             "4. Place P onset, P peak, P offset.\n"
             "5. Place QRS onset, Q nadir, R peak, S nadir, J point.\n"
             "6. Place T onset, T peak, T offset.\n"
@@ -832,6 +828,109 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             pass
 
+    def get_template_alignment_offsets(self):
+        # Returns x shift in seconds and y shift in ADC units.
+        try:
+            x_s = float(self.tt_align_x_spin.value()) / 1000.0 if hasattr(self, "tt_align_x_spin") else float(getattr(self, "template_x_offset_s", 0.0))
+        except Exception:
+            x_s = float(getattr(self, "template_x_offset_s", 0.0))
+
+        try:
+            y_adc = float(self.tt_align_y_spin.value()) if hasattr(self, "tt_align_y_spin") else float(getattr(self, "template_y_offset_adc", 0.0))
+        except Exception:
+            y_adc = float(getattr(self, "template_y_offset_adc", 0.0))
+
+        return x_s, y_adc
+
+    def template_alignment_changed(self):
+        # Alignment changes only the generated Teaching Template ECG display.
+        # Raw and filtered signals are not modified.
+        try:
+            x_s, y_adc = self.get_template_alignment_offsets()
+            self.template_x_offset_s = float(x_s)
+            self.template_y_offset_adc = float(y_adc)
+
+            if self.get_active_view_key() == "template":
+                self.refresh_plot()
+
+            try:
+                self.update_right_guidance_panel()
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                self.log_message(f"Teaching Template alignment update failed: {e}")
+            except Exception:
+                pass
+
+    def reset_template_alignment_clicked(self):
+        try:
+            if hasattr(self, "tt_align_x_spin"):
+                self.tt_align_x_spin.blockSignals(True)
+                self.tt_align_x_spin.setValue(0.0)
+                self.tt_align_x_spin.blockSignals(False)
+
+            if hasattr(self, "tt_align_y_spin"):
+                self.tt_align_y_spin.blockSignals(True)
+                self.tt_align_y_spin.setValue(0.0)
+                self.tt_align_y_spin.blockSignals(False)
+
+            self.template_x_offset_s = 0.0
+            self.template_y_offset_adc = 0.0
+
+            if self.get_active_view_key() == "template":
+                self.refresh_plot()
+
+            try:
+                self.update_right_guidance_panel()
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                self.log_message(f"Teaching Template alignment reset failed: {e}")
+            except Exception:
+                pass
+
+    def apply_teaching_template_alignment(self, t, template):
+        # Apply manual X/Y alignment to the generated Teaching Template ECG.
+        #
+        # Important:
+        # - The x axis remains the recording time axis.
+        # - Raw and filtered data are not modified.
+        # - The template waveform is shifted within that time axis so marker
+        #   snapping and Beat View can use the aligned Teaching Template trace.
+        try:
+            t = np.asarray(t, dtype=float)
+            y = np.asarray(template, dtype=float)
+
+            if len(t) != len(y) or len(t) < 2:
+                return template
+
+            x_s, y_adc = self.get_template_alignment_offsets()
+
+            finite = np.isfinite(t) & np.isfinite(y)
+            if finite.sum() < 2:
+                return y + y_adc
+
+            baseline = float(np.nanmedian(y[finite]))
+
+            if abs(float(x_s)) > 1e-12:
+                # Positive x_s moves the template to the right:
+                # y_aligned(t) = y_original(t - x_s)
+                shifted = np.interp(
+                    t,
+                    t[finite] + float(x_s),
+                    y[finite],
+                    left=baseline,
+                    right=baseline,
+                )
+            else:
+                shifted = y.copy()
+
+            return shifted + float(y_adc)
+        except Exception:
+            return template
+
     def show_planned_latest_recording(self):
         self.info_box.setText(
             "Use Latest Recording is planned for the next workflow stage.\n\n"
@@ -1009,7 +1108,7 @@ class ECGCalipersPanel(QWidget):
         if label.startswith("raw"):
             return "Amplitude (raw ADC units; not mV)"
         if label.startswith("teaching"):
-            return "Derived teaching template (filtered ADC-count deviation; not mV)"
+            return "Filtered ECG amplitude with optional teaching guide (ADC-count deviation; not mV)"
         return "Filtered amplitude (ADC-count deviation; not mV)"
 
 
@@ -1272,7 +1371,7 @@ class ECGCalipersPanel(QWidget):
 
         if hasattr(self, "baseline_status_label"):
             if key == "template":
-                self.baseline_status_label.setText("Baseline: stable isoelectric template")
+                self.baseline_status_label.setText("Baseline: --")
             elif self.baseline_value is None:
                 self.baseline_status_label.setText("Baseline: --")
             else:
@@ -1673,37 +1772,59 @@ class ECGCalipersPanel(QWidget):
             else:
                 write_flat(t_offset, min(t_max, t_offset + 0.160))
 
-        return template
+        return self.apply_teaching_template_alignment(t, template)
 
 
     def plot_current_ecg_trace(self, t, y):
         key = self.get_active_view_key()
 
         if key == "template":
-            show_overlay = False
+            # In Teaching Template ECG view, the real filtered ECG is the
+            # measurement trace. The generated TT waveform is only a movable
+            # visual guide.
+            show_guide = True
             if hasattr(self, "template_overlay_box"):
-                show_overlay = self.template_overlay_box.isChecked()
+                show_guide = self.template_overlay_box.isChecked()
 
-            overlay_y = getattr(self, "current_template_overlay_y", None)
-            if show_overlay and overlay_y is not None:
+            guide_y = getattr(self, "current_teaching_template_y", None)
+            if guide_y is None:
+                guide_y = getattr(self, "current_template_overlay_y", None)
+
+            if show_guide and guide_y is not None:
                 try:
-                    overlay_y = np.asarray(overlay_y, dtype=float)
-                    if len(overlay_y) == len(t):
-                        self.plot.plot(
+                    guide_y = np.asarray(guide_y, dtype=float)
+                    if len(guide_y) == len(t):
+                        guide_item = self.plot.plot(
                             t,
-                            overlay_y,
-                            pen=pg.mkPen((255, 196, 0, 110), width=1),
-                            name="Filtered ECG overlay"
+                            guide_y,
+                            pen=pg.mkPen((185, 246, 202, 130), width=2),
+                            name="Teaching Template guide"
                         )
+                        try:
+                            guide_item.setZValue(5)
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
-            self.plot.plot(
-                t,
-                y,
-                pen=pg.mkPen(self.get_trace_color(), width=2),
-                name="Teaching Template ECG"
-            )
+            try:
+                main_item = self.plot.plot(
+                    t,
+                    y,
+                    pen=pg.mkPen("#FFC400", width=1.6),
+                    name="Filtered ECG measurement trace"
+                )
+                try:
+                    main_item.setZValue(20)
+                except Exception:
+                    pass
+            except Exception:
+                self.plot.plot(
+                    t,
+                    y,
+                    pen=pg.mkPen(self.get_trace_color(), width=1),
+                    name="Filtered ECG measurement trace"
+                )
             return
 
         self.plot.plot(
@@ -2990,6 +3111,7 @@ class ECGCalipersPanel(QWidget):
             self.current_display_label = "Raw"
 
         self.current_template_overlay_y = None
+        self.current_teaching_template_y = None
         view_name = self.view_box.currentText() if hasattr(self, "view_box") else ""
         if str(view_name).startswith("Teaching"):
             raw_for_template = np.asarray(self.current_channel_data.get(ch, y), dtype=float)
@@ -2998,10 +3120,16 @@ class ECGCalipersPanel(QWidget):
                 raw_for_template,
                 notch=self.notch_box.isChecked() if hasattr(self, "notch_box") else True
             )
-            self.current_template_overlay_y = filtered_for_template
+
+            # Teaching Template view is now a real-measurement view:
+            # - filtered ECG is the main waveform and marker snapping source
+            # - generated Teaching Template is only an optional visual guide
             self.ensure_r_peaks_for_template(t, filtered_for_template)
-            y = self.make_teaching_template_ecg(t)
-            self.current_display_label = "Teaching Template ECG"
+            template_for_guide = self.make_teaching_template_ecg(t)
+            self.current_teaching_template_y = template_for_guide
+            self.current_template_overlay_y = template_for_guide  # backward-compatible name for guide overlay
+            y = filtered_for_template
+            self.current_display_label = "Filtered ECG + Teaching Guide"
 
         self.current_display_y = y
         self.current_plot_t = t
@@ -3585,16 +3713,16 @@ class ECGCalipersPanel(QWidget):
 
         try:
             if self.get_active_view_key() == "template":
-                lines.append("Teaching-only template; not for diagnosis/research.")
+                lines.append("Template view uses filtered ECG for measurement; TT guide is teaching-only.")
                 lines.append("")
-                lines.append("Template method:")
-                lines.append("1. Filtered ECG is used as the source signal.")
+                lines.append("Template/guide method:")
+                lines.append("1. Yellow trace = filtered ECG measurement waveform.")
                 lines.append("2. R peaks are auto-detected if needed.")
                 lines.append("3. R timing = detected R-peak times.")
                 lines.append("4. R amplitude = local filtered R peak minus pre-QRS median baseline.")
-                lines.append("5. Template is baseline-flat and feature-anchored: P peak, Q/R/S, and T peak use filtered ECG features inside valid windows.")
+                lines.append("5. Pale green TT guide is baseline-flat and feature-anchored, but markers snap to the filtered ECG.")
                 lines.append("6. Isoelectric PR, ST, and TP segments are drawn flat on a local pre-QRS baseline; guardrails preserve PR 120-200 ms, compact QRS, ST before T, and QT awareness.")
-                lines.append("7. Baseline is fixed at 0 template units.")
+                lines.append("7. TT X/Y shifts only the guide; raw.csv and filtered ECG are unchanged.")
                 lines.append("")
         except Exception:
             pass
@@ -4304,7 +4432,7 @@ class ECGCalipersPanel(QWidget):
         plot.setBackground("#020304")
         plot.showGrid(x=True, y=True, alpha=0.35)
         plot.setLabel("bottom", "Time relative to P onset", units="ms")
-        plot.setLabel("left", "Amplitude", units="ADC / template units")
+        plot.setLabel("left", "Amplitude", units="filtered ADC units")
 
         # This is a report-style beat visualizer, not an editing canvas.
         # Disable mouse pan/zoom/context-menu so accidental clicks and wheels
@@ -4316,7 +4444,7 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             pass
 
-        plot.plot(x_ms, y_plot, pen=pg.mkPen("#B9F6CA", width=2), name="Beat ECG")
+        plot.plot(x_ms, y_plot, pen=pg.mkPen("#FFC400", width=2), name="Beat filtered ECG")
 
         # Build y-levels for interval arrows.
         try:
