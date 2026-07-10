@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -25,14 +24,22 @@ except Exception:  # pragma: no cover
 import pyqtgraph as pg
 
 try:
-    from app.ecg_shared_r_detection import (
-        safe_sampling_rate,
-        detect_complete_ecg_complexes,
+    from app.ecg_core.io import load_ecg_csv, choose_default_channel_name
+    from app.ecg_core.filters import safe_sampling_rate
+    from app.ecg_core.r_detection import detect_complete_ecg_complexes
+    from app.ecg_core.complexes import (
+        pair_count_from_complete_peaks,
+        pair_indices,
+        pair_time_window,
     )
 except Exception:  # pragma: no cover
-    from .ecg_shared_r_detection import (
-        safe_sampling_rate,
-        detect_complete_ecg_complexes,
+    from .ecg_core.io import load_ecg_csv, choose_default_channel_name
+    from .ecg_core.filters import safe_sampling_rate
+    from .ecg_core.r_detection import detect_complete_ecg_complexes
+    from .ecg_core.complexes import (
+        pair_count_from_complete_peaks,
+        pair_indices,
+        pair_time_window,
     )
 
 
@@ -345,47 +352,19 @@ class ECGRRPairsPanel(QWidget):
 
     def load_raw_csv(self, path: Path):
         try:
-            headers, columns = self._read_numeric_csv(path)
-            self.raw_path = path
+            self.raw_path = Path(path)
 
-            time_idx = self._find_explicit_time_column(headers)
-            if time_idx is not None:
-                t = columns[time_idx].astype(float)
-                t = t - np.nanmin(t)
-                finite = t[np.isfinite(t)]
-                if len(finite) > 3:
-                    d = np.diff(finite)
-                    pos = d[d > 0]
-                    med_d = float(np.nanmedian(pos)) if len(pos) else 0.0
-                    # Robust time-unit inference.
-                    # OPL/NPG files may store time as seconds, ms, or us.
-                    # At 500 Hz, median dt is approximately:
-                    #   seconds:      0.002
-                    #   milliseconds: 2
-                    #   microseconds: 2000
-                    if med_d > 100.0:
-                        t = t / 1000000.0
-                    elif med_d > 0.02:
-                        t = t / 1000.0
-                self.time_s = t
-            else:
-                n = len(columns[0])
-                self.time_s = np.arange(n, dtype=float) / 500.0
-
-            self.channels = {}
-            for i, (name, col) in enumerate(zip(headers, columns)):
-                if time_idx is not None and i == time_idx:
-                    continue
-                if self._is_probable_ecg_signal_column(name, col):
-                    self.channels[name] = col.astype(float)
-
-            if not self.channels:
-                raise ValueError("No ECG-like signal channel found. Time/segment/sample columns were excluded.")
+            # Shared ECG core loader:
+            # - reads numeric CSV
+            # - detects seconds/ms/us time units
+            # - excludes time/segment/sample/index columns
+            # - keeps only ECG-like signal channels
+            self.time_s, self.channels, self.csv_headers, self.csv_columns, self.time_idx = load_ecg_csv(self.raw_path)
 
             self.channel_box.blockSignals(True)
             self.channel_box.clear()
             self.channel_box.addItems(list(self.channels.keys()))
-            default_name = self.choose_default_channel_name()
+            default_name = choose_default_channel_name(self.channels)
             if default_name:
                 self.channel_box.setCurrentText(default_name)
             self.channel_box.blockSignals(False)
@@ -397,119 +376,6 @@ class ECGRRPairsPanel(QWidget):
             self.status_label.setText("Load failed")
             self.plot.clear()
             self.measurements_box.setPlainText(f"Could not load raw.csv:\n{exc}")
-
-    def _read_numeric_csv(self, path: Path) -> Tuple[List[str], List[np.ndarray]]:
-        with path.open("r", newline="", encoding="utf-8-sig", errors="replace") as f:
-            sample = f.read(4096)
-            f.seek(0)
-            try:
-                dialect = csv.Sniffer().sniff(sample)
-            except Exception:
-                dialect = csv.excel
-            reader = csv.reader(f, dialect)
-            rows = list(reader)
-
-        if not rows:
-            raise ValueError("CSV is empty.")
-
-        header = rows[0]
-        data_rows = rows[1:]
-
-        first_numeric_count = 0
-        for cell in header:
-            try:
-                float(cell)
-                first_numeric_count += 1
-            except Exception:
-                pass
-
-        if first_numeric_count >= max(1, len(header) // 2):
-            data_rows = rows
-            header = [f"col{i+1}" for i in range(len(rows[0]))]
-
-        max_cols = max(len(r) for r in data_rows if r) if data_rows else len(header)
-        header = header + [f"col{i+1}" for i in range(len(header), max_cols)]
-
-        cols: List[List[float]] = [[] for _ in range(max_cols)]
-        for row in data_rows:
-            if not row:
-                continue
-            for i in range(max_cols):
-                try:
-                    value = float(row[i]) if i < len(row) and row[i] != "" else np.nan
-                except Exception:
-                    value = np.nan
-                cols[i].append(value)
-
-        arrays = [np.asarray(c, dtype=float) for c in cols]
-        n = min(len(a) for a in arrays)
-        arrays = [a[:n] for a in arrays]
-        return header[:max_cols], arrays
-
-    def _find_explicit_time_column(self, headers: List[str]) -> Optional[int]:
-        for i, name in enumerate(headers):
-            compact = str(name).lower().strip().replace(" ", "").replace("-", "_")
-            if compact in ("time", "time_s", "time_sec", "seconds", "timestamp", "t"):
-                return i
-            if compact.startswith("time_") or compact.endswith("_time"):
-                return i
-        return None
-
-    def _is_probable_ecg_signal_column(self, name: str, col: np.ndarray) -> bool:
-        lname = str(name).lower().strip()
-        blocked = (
-            "time", "timestamp", "segment", "seg", "sample", "index", "packet",
-            "counter", "count", "marker", "event", "ms", "sec"
-        )
-        if any(word in lname for word in blocked):
-            return False
-
-        x = np.asarray(col, dtype=float)
-        finite = x[np.isfinite(x)]
-        if len(finite) < max(20, len(x) * 0.5):
-            return False
-        if np.nanstd(finite) <= 1e-9:
-            return False
-
-        try:
-            unique_count = len(np.unique(finite[: min(len(finite), 5000)]))
-            if unique_count < 10:
-                return False
-        except Exception:
-            pass
-
-        d = np.diff(finite[: min(len(finite), 5000)])
-        if len(d):
-            frac_pos = float(np.mean(d >= 0))
-            frac_neg = float(np.mean(d <= 0))
-            if frac_pos > 0.995 or frac_neg > 0.995:
-                return False
-
-        return True
-
-    def choose_default_channel_name(self) -> Optional[str]:
-        if not self.channels:
-            return None
-        names = list(self.channels.keys())
-        compact_names = [(name, name.lower().replace(" ", "").replace("_", "")) for name in names]
-
-        for token in ("ch1", "channel1", "a0", "ecg", "lead"):
-            for name, compact in compact_names:
-                if token in compact:
-                    return name
-
-        best_name = names[0]
-        best_score = -np.inf
-        for name in names:
-            x = np.asarray(self.channels[name], dtype=float)
-            finite = x[np.isfinite(x)]
-            if len(finite) < 20:
-                continue
-            score = float(np.nanpercentile(finite, 99) - np.nanpercentile(finite, 1))
-            if score > best_score:
-                best_score = score
-                best_name = name
-        return best_name
 
     def channel_changed(self):
         self.channel_name = self.channel_box.currentText()
@@ -559,7 +425,7 @@ class ECGRRPairsPanel(QWidget):
         self.refresh_plot()
 
     def pair_count(self) -> int:
-        return max(0, len(self.complete_peaks) - 1)
+        return pair_count_from_complete_peaks(self.complete_peaks)
 
     # ------------------------------------------------------------------
     # Navigation and plotting
@@ -676,8 +542,7 @@ class ECGRRPairsPanel(QWidget):
         t = self.time_s
 
         i = self.pair_index
-        r1 = int(self.complete_peaks[i])
-        r2 = int(self.complete_peaks[i + 1])
+        r1, r2 = pair_indices(i, self.complete_peaks)
         r1_t = float(t[r1])
         r2_t = float(t[r2])
         rr_s = r2_t - r1_t
@@ -687,8 +552,7 @@ class ECGRRPairsPanel(QWidget):
         # Include the full PQRST of both complexes:
         # complex A: R_A - pre to R_A + post
         # complex B: R_B - pre to R_B + post
-        start_t = max(float(t[0]), r1_t - self.pre_r_s)
-        end_t = min(float(t[-1]), r2_t + self.post_r_s)
+        start_t, end_t = pair_time_window(t, r1, r2, self.pre_r_s, self.post_r_s)
 
         mask = (t >= start_t) & (t <= end_t)
         x = t[mask] - ref_t
@@ -758,8 +622,7 @@ class ECGRRPairsPanel(QWidget):
             )
 
         i = self.pair_index
-        r1 = int(self.complete_peaks[i])
-        r2 = int(self.complete_peaks[i + 1])
+        r1, r2 = pair_indices(i, self.complete_peaks)
         r1_t = float(self.time_s[r1])
         r2_t = float(self.time_s[r2])
         rr_ms = (r2_t - r1_t) * 1000.0
