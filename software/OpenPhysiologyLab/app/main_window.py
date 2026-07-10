@@ -14,6 +14,7 @@ from app.results_panel import ResultsPanel
 from app.compare_panel import ComparePanel
 from app.machine_panel import MachinePanel
 from app.ecg_calipers_panel import ECGCalipersPanel
+from app.ecg_rr_pairs_panel import ECGRRPairsPanel
 from app.theme import build_stylesheet
 
 
@@ -45,6 +46,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.tabs.addTab(self.setup_panel, "Setup")
         self.tabs.addTab(self.recorder_panel, "Recorder")
         self.tabs.addTab(self.ecg_calipers_panel, "ECG Calipers")
+        self.tabs.addTab(ECGRRPairsPanel(), "RR Pairs")
         self.tabs.addTab(self.analysis_panel, "Analysis")
         self.tabs.addTab(self.results_panel, "Results")
         self.tabs.addTab(self.compare_panel, "Compare")

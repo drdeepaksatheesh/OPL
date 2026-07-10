@@ -12,8 +12,10 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout,
     QGroupBox, QTextEdit, QFileDialog, QComboBox, QCheckBox, QSplitter, QScrollBar,
     QDoubleSpinBox,
+    QShortcut,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEvent
+from PyQt5.QtGui import QKeySequence
 
 
 class ECGCalipersPanel(QWidget):
@@ -63,11 +65,15 @@ class ECGCalipersPanel(QWidget):
         self.marker_sets = {
             "raw": {},
             "filtered": {},
+            "average": {},
+            "rcentered": {},
             "template": {},
         }
         self.baseline_sets = {
             "raw": None,
             "filtered": None,
+            "average": 0.0,
+            "rcentered": 0.0,
             "template": 0.0,
         }
 
@@ -131,9 +137,19 @@ class ECGCalipersPanel(QWidget):
         controls_layout.addWidget(QLabel("View"))
         self.view_box = QComboBox()
         self.view_box.setMinimumWidth(150)
-        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz"])
+        self.view_box.setFocusPolicy(Qt.ClickFocus)
+        self.view_box.addItems(["Raw", "Filtered ECG 0.5-40 Hz", "Average beat", "R-centered complexes"])
         self.view_box.currentIndexChanged.connect(self.refresh_plot)
         controls_layout.addWidget(self.view_box)
+        self.r_complex_box = QComboBox()
+        self.r_complex_box.setFocusPolicy(Qt.ClickFocus)
+        self.r_complex_box.addItem("All complexes")
+        self.r_complex_box.setEnabled(False)
+        self.r_complex_box.setMinimumWidth(125)
+        self.r_complex_box.setToolTip("For R-centered complexes: show all complexes or isolate one numbered complex.")
+        self.r_complex_box.currentIndexChanged.connect(self.r_complex_selection_changed)
+        controls_layout.addWidget(QLabel("Complex"))
+        controls_layout.addWidget(self.r_complex_box)
 
         self.notch_box = QCheckBox("50 Hz")
         self.notch_box.setChecked(True)
@@ -154,6 +170,10 @@ class ECGCalipersPanel(QWidget):
             "Use the same ECG R-peak detector used by Analysis as the internal beat reference."
         )
         self.detect_r_btn.clicked.connect(self.detect_r_peaks_clicked)
+        # R detection is automatic in ECG Calipers now; keep the method
+        # available internally but remove the manual button from the UI.
+        self.detect_r_btn.setVisible(False)
+        self.detect_r_btn.setEnabled(False)
 
         self.prev_beat_btn = QPushButton("<")
         self.prev_beat_btn.setToolTip("Previous detected R peak")
@@ -392,7 +412,7 @@ class ECGCalipersPanel(QWidget):
         summary_layout.addWidget(self.summary_box)
         right_layout.addWidget(summary_group, stretch=2)
 
-        info_group = QGroupBox("Navigation / Method")
+        info_group = QGroupBox("Navigation")
         info_layout = QVBoxLayout(info_group)
         info_layout.setContentsMargins(8, 6, 8, 6)
 
@@ -402,6 +422,22 @@ class ECGCalipersPanel(QWidget):
         self.update_right_guidance_panel()
         info_layout.addWidget(self.info_box)
         right_layout.addWidget(info_group, stretch=1)
+
+        method_group = QGroupBox("Method")
+        method_group.setStyleSheet("QGroupBox { color: #E6C200; font-weight: bold; }")
+        method_layout = QVBoxLayout(method_group)
+        method_layout.setContentsMargins(6, 6, 6, 6)
+        method_layout.setSpacing(4)
+
+        self.method_text_box = QTextEdit()
+        self.method_text_box.setReadOnly(True)
+        self.method_text_box.setMinimumHeight(115)
+        self.method_text_box.setStyleSheet(
+            "QTextEdit { color: #D8DEE9; background-color: #0B0F14; "
+            "border: 1px solid #243241; border-radius: 4px; }"
+        )
+        method_layout.addWidget(self.method_text_box)
+        right_layout.addWidget(method_group, stretch=1)
 
         content_splitter.addWidget(left_container)
         content_splitter.addWidget(right_container)
@@ -426,23 +462,20 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             return False
 
-    def set_plot_interaction_loaded_state(self):
-        loaded = self.is_ecg_data_loaded()
-
+    def set_plot_interaction_loaded_state(self, loaded):
+        # Avoid accidental click-drag plot movement.
+        # Navigation is via scrollbar and keyboard; marker Ctrl-drag is handled
+        # by custom marker code, not by pyqtgraph view panning.
         try:
-            self.plot.setMouseEnabled(x=loaded, y=False)
+            if not hasattr(self, "plot") or self.plot is None:
+                return
             vb = self.plot.getViewBox()
-            vb.setMouseEnabled(x=loaded, y=False)
-            vb.setMenuEnabled(False)
-            self.plot.setMenuEnabled(False)
-            self.plot.hideButtons()
+            if vb is None:
+                return
+            vb.setMouseEnabled(x=False, y=False)
         except Exception:
             pass
 
-        try:
-            self.time_scroll.setEnabled(loaded)
-        except Exception:
-            pass
 
     def required_beat_view_missing(self):
         checks = [
@@ -496,7 +529,7 @@ class ECGCalipersPanel(QWidget):
                 "- raw.csv is read without modifying the file.\n"
                 "- Time comes from time_us when available; otherwise pc_time_s or sample number is used.\n"
                 "- Y-axis shows stored ADC counts from the selected channel.\n"
-                "- No filtering, smoothing, inversion, or baseline subtraction is applied to this view.\n"
+                "- No filtering, smoothing, inversion, baseline subtraction, or filtered R-marker overlay is applied to this view.\n"
                 "- Use Raw to inspect ADC headroom, clipping, drift, and original acquisition quality."
             )
 
@@ -544,7 +577,7 @@ class ECGCalipersPanel(QWidget):
 
         return (
             "Marker workflow\n"
-            "1. Choose Raw or Filtered ECG.\n"
+            "1. Choose Raw, Filtered ECG, R-centered complexes, or Average beat.\n"
             "2. Detect R peaks for beat reference.\n"
             "3. Set baseline if needed.\n"
             "4. Place P onset, P peak, P offset.\n"
@@ -584,6 +617,47 @@ class ECGCalipersPanel(QWidget):
             self.info_box.setText("\n".join(parts))
         except Exception:
             pass
+
+        try:
+            method_lines = []
+            view_name = self.view_box.currentText() if hasattr(self, "view_box") else ""
+            if str(view_name).startswith("Raw"):
+                method_lines = [
+                    "Raw signal method",
+                    "- raw.csv is read without modifying the file.",
+                    "- No filtering, smoothing, inversion, or baseline subtraction is applied.",
+                    "- Use Raw to inspect ADC headroom, clipping, drift, and acquisition quality.",
+                ]
+            elif str(view_name).startswith("Filtered"):
+                method_lines = [
+                    "Filtered ECG method",
+                    "- Source is the selected raw ADC channel.",
+                    "- Display uses the in-memory 0.5-40 Hz ECG review filter.",
+                    "- 50 Hz notch is applied only when enabled.",
+                    "- raw.csv is not overwritten.",
+                ]
+            elif str(view_name).startswith("R-centered"):
+                method_lines = [
+                    "R-centered complexes method",
+                    "- R peaks are detected from the filtered ECG.",
+                    "- Valid beats are extracted around R = 0 ms.",
+                    "- Edge-truncated beats are rejected before summation.",
+                    "- Each complex is baseline-aligned using a pre-R window.",
+                ]
+            else:
+                method_lines = [
+                    "Average beat method",
+                    "- Average beat is the mean of valid R-centered complexes.",
+                    "- Edge-truncated complexes are rejected first.",
+                    "- R = 0 ms is the shared reference point.",
+                ]
+
+            if hasattr(self, "method_text_box"):
+                self.method_text_box.setPlainText("\n".join(method_lines))
+        except Exception:
+            pass
+
+
 
     def get_calipers_filtered_signal_for_detection(self):
         # Return ch, t, filtered_y for R detection independent of current view.
@@ -781,6 +855,15 @@ class ECGCalipersPanel(QWidget):
 
     def auto_focus_first_complete_pqrst_beat(self):
         # On load/view change, detect R and focus the first complete PQRST complex.
+        # no_jitter: refresh_plot already chooses the first stable complete beat
+        # synchronously. Avoid a second delayed visual move on load.
+        try:
+            if getattr(self, "selected_peak_number", None) is not None and not self.is_epoch_review_view():
+                self.center_view_on_r_peak_number(getattr(self, "selected_peak_number", None))
+                return
+        except Exception:
+            pass
+
         try:
             if self.current_plot_t is None or self.current_plot_y is None:
                 return
@@ -1109,7 +1192,7 @@ class ECGCalipersPanel(QWidget):
             return "Amplitude (raw ADC units; not mV)"
         if label.startswith("teaching"):
             return "Filtered ECG amplitude with optional teaching guide (ADC-count deviation; not mV)"
-        return "Filtered amplitude (ADC-count deviation; not mV)"
+        return "Amplitude (ADC-count deviation; not mV)"
 
 
     def get_x_range_for_refresh(self):
@@ -1323,22 +1406,31 @@ class ECGCalipersPanel(QWidget):
                 pass
 
     def get_active_view_key(self):
-        label = str(getattr(self, "current_display_label", "")).lower()
-        if label.startswith("raw"):
+        if not hasattr(self, "view_box"):
             return "raw"
-        if label.startswith("teaching"):
-            return "template"
+        text = str(self.view_box.currentText())
+        if text.startswith("Raw"):
+            return "raw"
+        if text.startswith("Average"):
+            return "average"
+        if text.startswith("R-centered"):
+            return "rcentered"
         return "filtered"
+
 
     def reset_all_view_measurements(self):
         self.marker_sets = {
             "raw": {},
             "filtered": {},
+            "average": {},
+            "rcentered": {},
             "template": {},
         }
         self.baseline_sets = {
             "raw": None,
             "filtered": None,
+            "average": 0.0,
+            "rcentered": 0.0,
             "template": 0.0,
         }
         self.landmarks = self.marker_sets["raw"]
@@ -1350,9 +1442,9 @@ class ECGCalipersPanel(QWidget):
         key = self.get_active_view_key()
 
         if not hasattr(self, "marker_sets"):
-            self.marker_sets = {"raw": {}, "filtered": {}, "template": {}}
+            self.marker_sets = {"raw": {}, "filtered": {}, "average": {}, "rcentered": {}, "template": {}}
         if not hasattr(self, "baseline_sets"):
-            self.baseline_sets = {"raw": None, "filtered": None, "template": 0.0}
+            self.baseline_sets = {"raw": None, "filtered": None, "average": 0.0, "rcentered": 0.0, "template": 0.0}
 
         self.landmarks = self.marker_sets.setdefault(key, {})
 
@@ -1384,7 +1476,7 @@ class ECGCalipersPanel(QWidget):
     def save_current_baseline_to_view(self):
         key = self.get_active_view_key()
         if not hasattr(self, "baseline_sets"):
-            self.baseline_sets = {"raw": None, "filtered": None, "template": 0.0}
+            self.baseline_sets = {"raw": None, "filtered": None, "average": 0.0, "rcentered": 0.0, "template": 0.0}
 
         if key == "template":
             self.baseline_value = 0.0
@@ -1775,56 +1867,103 @@ class ECGCalipersPanel(QWidget):
         return self.apply_teaching_template_alignment(t, template)
 
 
+    def should_show_r_reference_overlay(self):
+        # Raw signal view must stay visually raw. R detection may still be used
+        # internally for navigation, but filtered R markers/lines should not be
+        # superimposed on the raw ADC trace.
+        try:
+            return self.get_active_view_key() != "raw"
+        except Exception:
+            return True
+
     def plot_current_ecg_trace(self, t, y):
-        key = self.get_active_view_key()
+        label = str(getattr(self, "current_display_label", ""))
 
-        if key == "template":
-            # In Teaching Template ECG view, the real filtered ECG is the
-            # measurement trace. The generated TT waveform is only a movable
-            # visual guide.
-            show_guide = True
-            if hasattr(self, "template_overlay_box"):
-                show_guide = self.template_overlay_box.isChecked()
+        if label == "R-centered complexes":
+            traces = getattr(self, "current_r_centered_traces", None)
+            avg = getattr(self, "current_r_centered_average", None)
+            selected = None
 
-            guide_y = getattr(self, "current_teaching_template_y", None)
-            if guide_y is None:
-                guide_y = getattr(self, "current_template_overlay_y", None)
+            try:
+                if traces is not None and len(traces) > 0:
+                    traces = np.asarray(traces, dtype=float)
+                    n = int(traces.shape[0])
+                    selected = self.get_selected_r_complex_index(n)
 
-            if show_guide and guide_y is not None:
-                try:
-                    guide_y = np.asarray(guide_y, dtype=float)
-                    if len(guide_y) == len(t):
-                        guide_item = self.plot.plot(
-                            t,
-                            guide_y,
-                            pen=pg.mkPen((185, 246, 202, 130), width=2),
-                            name="Teaching Template guide"
-                        )
+                    if selected is None:
+                        # Summated view: every complex gets its own stable color.
+                        for i, row in enumerate(traces):
+                            if len(row) != len(t):
+                                continue
+                            color = pg.intColor(i, hues=max(9, n), values=1, maxValue=255)
+                            try:
+                                color.setAlpha(115)
+                            except Exception:
+                                pass
+                            self.plot.plot(
+                                t,
+                                row,
+                                pen=pg.mkPen(color, width=1.15),
+                                name=f"Complex {i + 1}"
+                            )
+                    else:
+                        # Isolation/comparison view: selected complex against average.
+                        if avg is not None and len(avg) == len(t):
+                            self.plot.plot(
+                                t,
+                                avg,
+                                pen=pg.mkPen((180, 220, 255, 145), width=2, style=Qt.DashLine),
+                                name="Average beat"
+                            )
+
+                        row = traces[selected]
+                        color = pg.intColor(selected, hues=max(9, n), values=1, maxValue=255)
                         try:
-                            guide_item.setZValue(5)
+                            color.setAlpha(255)
                         except Exception:
                             pass
+                        self.plot.plot(
+                            t,
+                            row,
+                            pen=pg.mkPen(color, width=2.6),
+                            name=f"Complex {selected + 1}"
+                        )
+
+            except Exception:
+                pass
+
+            # Average on top only in all-complex summated mode.
+            if selected is None:
+                try:
+                    if avg is None:
+                        avg = y
+                    if avg is not None and len(avg) == len(t):
+                        self.plot.plot(
+                            t,
+                            avg,
+                            pen=pg.mkPen("#FFC400", width=2.6),
+                            name="Average of R-centered complexes"
+                        )
                 except Exception:
                     pass
 
             try:
-                main_item = self.plot.plot(
-                    t,
-                    y,
-                    pen=pg.mkPen("#FFC400", width=1.6),
-                    name="Filtered ECG measurement trace"
-                )
-                try:
-                    main_item.setZValue(20)
-                except Exception:
-                    pass
+                self.plot.addLine(x=0.0, pen=pg.mkPen((180, 220, 255, 130), width=1))
             except Exception:
-                self.plot.plot(
-                    t,
-                    y,
-                    pen=pg.mkPen(self.get_trace_color(), width=1),
-                    name="Filtered ECG measurement trace"
-                )
+                pass
+            return
+
+        if label == "Average beat":
+            self.plot.plot(
+                t,
+                y,
+                pen=pg.mkPen("#FFC400", width=2.7),
+                name="Average beat"
+            )
+            try:
+                self.plot.addLine(x=0.0, pen=pg.mkPen((180, 220, 255, 130), width=1))
+            except Exception:
+                pass
             return
 
         self.plot.plot(
@@ -1833,6 +1972,20 @@ class ECGCalipersPanel(QWidget):
             pen=pg.mkPen(self.get_trace_color(), width=1),
             name=getattr(self, "current_display_label", "ECG")
         )
+
+        # Selected R reference line for Raw/Filtered views.
+        try:
+            if (not self.is_epoch_review_view()) and self.should_show_r_reference_overlay():
+                peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+                selected = getattr(self, "selected_peak_number", None)
+                if selected is not None and len(peaks) > 0 and self.current_plot_t is not None:
+                    selected = int(max(0, min(int(selected), len(peaks) - 1)))
+                    tt = np.asarray(self.current_plot_t, dtype=float)
+                    idx = int(peaks[selected])
+                    if 0 <= idx < len(tt):
+                        self.plot.addLine(x=float(tt[idx]), pen=pg.mkPen((180, 220, 255, 130), width=1))
+        except Exception:
+            pass
 
 
     def ensure_r_peaks_for_template(self, t, filtered):
@@ -3049,11 +3202,9 @@ class ECGCalipersPanel(QWidget):
     def keyPressEvent(self, event):
         try:
             key = event.key()
-            if key == Qt.Key_Left:
-                self.previous_beat_clicked()
-                return
-            if key == Qt.Key_Right:
-                self.next_beat_clicked()
+            if key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+                self.handle_calipers_arrow_key(key)
+                event.accept()
                 return
         except Exception:
             pass
@@ -3062,6 +3213,7 @@ class ECGCalipersPanel(QWidget):
             super().keyPressEvent(event)
         except Exception:
             pass
+
 
     def showEvent(self, event):
         try:
@@ -3081,8 +3233,271 @@ class ECGCalipersPanel(QWidget):
             pass
 
 
+    def ensure_view_marker_storage_keys(self):
+        try:
+            if not hasattr(self, "marker_sets") or not isinstance(self.marker_sets, dict):
+                self.marker_sets = {}
+            if not hasattr(self, "baseline_sets") or not isinstance(self.baseline_sets, dict):
+                self.baseline_sets = {}
+
+            for key in ["raw", "filtered", "average", "rcentered", "template"]:
+                self.marker_sets.setdefault(key, {})
+
+            self.baseline_sets.setdefault("raw", None)
+            self.baseline_sets.setdefault("filtered", None)
+            self.baseline_sets.setdefault("average", 0.0)
+            self.baseline_sets.setdefault("rcentered", 0.0)
+            self.baseline_sets.setdefault("template", 0.0)
+        except Exception:
+            pass
+
+    def current_ecg_review_view_name(self):
+        try:
+            return str(self.view_box.currentText())
+        except Exception:
+            return ""
+
+    def current_ecg_review_view_key(self):
+        view = self.current_ecg_review_view_name()
+        if view.startswith("Raw"):
+            return "raw"
+        if view.startswith("Filtered"):
+            return "filtered"
+        if view.startswith("Average"):
+            return "average"
+        if view.startswith("R-centered"):
+            return "rcentered"
+        return self.get_active_view_key() if hasattr(self, "get_active_view_key") else "filtered"
+
+    def find_textedit_by_candidates(self, names):
+        try:
+            for name in names:
+                obj = getattr(self, name, None)
+                if obj is not None and hasattr(obj, "setPlainText"):
+                    return obj
+        except Exception:
+            pass
+        return None
+
+    def find_measurement_text_box(self):
+        box = self.find_textedit_by_candidates([
+            "measurements_text_box", "caliper_measurements_box", "measurements_box",
+            "measurement_text_box", "results_text_box", "caliper_text_box"
+        ])
+        if box is not None:
+            return box
+
+        # Fallback: identify by placeholder text.
+        try:
+            for _name, obj in self.__dict__.items():
+                if hasattr(obj, "toPlainText") and hasattr(obj, "setPlainText"):
+                    txt = obj.toPlainText()
+                    if "Caliper measurements" in txt or "measurements will appear" in txt:
+                        return obj
+        except Exception:
+            pass
+        return None
+
+    def find_navigation_text_box(self):
+        box = self.find_textedit_by_candidates([
+            "navigation_text_box", "nav_text_box", "navigation_box",
+            "navigation_method_text_box", "nav_method_text_box", "right_info_text_box",
+            "method_text", "nav_text"
+        ])
+        if box is not None and box is not getattr(self, "method_text_box", None):
+            return box
+
+        # Fallback: use a QTextEdit that is not measurements and not method.
+        try:
+            measurement = self.find_measurement_text_box()
+            method = getattr(self, "method_text_box", None)
+            for _name, obj in self.__dict__.items():
+                if hasattr(obj, "toPlainText") and hasattr(obj, "setPlainText"):
+                    if obj is measurement or obj is method:
+                        continue
+                    txt = obj.toPlainText()
+                    if (
+                        "Raw signal view" in txt
+                        or "Filtered ECG view" in txt
+                        or "Navigation" in txt
+                        or "Loaded recording" in txt
+                    ):
+                        return obj
+            for _name, obj in self.__dict__.items():
+                if hasattr(obj, "toPlainText") and hasattr(obj, "setPlainText"):
+                    if obj is not measurement and obj is not method:
+                        return obj
+        except Exception:
+            pass
+        return None
+
+    def build_ecg_calipers_navigation_text(self):
+        key = self.current_ecg_review_view_key()
+        lines = []
+
+        if key == "raw":
+            lines += [
+                "Raw view navigation",
+                "- Up / Down: switch view.",
+                "- Left / Right: previous / next R-referenced beat.",
+                "- R line/status is a navigation reference only; filtered R markers are not drawn on Raw.",
+                "- Reset: return to selected R-referenced beat window.",
+                "- Use Raw to inspect drift, clipping, ADC headroom, and acquisition quality.",
+            ]
+        elif key == "filtered":
+            lines += [
+                "Filtered view navigation",
+                "- Up / Down: switch view.",
+                "- Left / Right: previous / next R-referenced beat.",
+                "- R reference uses the same screen geometry as Average/R-centered views.",
+                "- Reset: return to selected R-referenced beat window.",
+                "- Use this view for single-beat manual inspection if the beat is clean.",
+            ]
+        elif key == "average":
+            lines += [
+                "Average beat navigation",
+                "- Up / Down: switch view.",
+                "- Left / Right: ignored in this view.",
+                "- R = 0 ms is the shared reference point.",
+                "- Recommended marker workflow: place P onset/peak/offset, QRS onset, Q/R/S/J, and T onset/peak/offset here first.",
+                "- Use Average beat as the default teaching/measurement landmark view when complexes are consistent.",
+            ]
+        else:
+            lines += [
+                "R-centered complexes navigation",
+                "- Up / Down: switch view.",
+                "- Left / Right: previous / next complex.",
+                "- Complex selector: All complexes or isolate a numbered complex.",
+                "- All complexes view shows beat-to-beat consistency around R = 0 ms.",
+                "- Isolated complex view compares a single beat against the average.",
+                "- Use this view to reject noisy/odd beats before trusting the Average beat.",
+            ]
+
+        try:
+            if hasattr(self, "r_status_label"):
+                status = self.r_status_label.text()
+                if status:
+                    lines += ["", "Current R reference", f"- {status}"]
+        except Exception:
+            pass
+
+        return "\n".join(lines)
+
+    def build_ecg_calipers_method_text(self):
+        key = self.current_ecg_review_view_key()
+
+        if key == "raw":
+            lines = [
+                "Raw signal method",
+                "- Displays stored ADC counts from raw.csv.",
+                "- No filter, smoothing, inversion, baseline subtraction, or filtered R overlay is drawn.",
+                "- R detection may be used internally only to navigate beat-to-beat.",
+                "- Raw should be used to verify whether a feature is acquisition-related or physiologic.",
+            ]
+        elif key == "filtered":
+            lines = [
+                "Filtered ECG method",
+                "- Source: selected raw ADC channel.",
+                "- Filter: in-memory ECG review filter, nominal 0.5-40 Hz.",
+                "- 50 Hz notch applies only when the checkbox is enabled.",
+                "- raw.csv is not overwritten.",
+                "- This is the main real waveform for beat-by-beat caliper review.",
+            ]
+        elif key == "average":
+            lines = [
+                "Average beat method",
+                "- R peaks are detected on the filtered ECG.",
+                "- Valid complexes are cut around R = 0 ms.",
+                "- Edge-truncated complexes are rejected before averaging.",
+                "- Each complex is shifted to a local pre-R baseline before averaging.",
+                "- The displayed waveform is the mean of valid R-centered complexes.",
+                "- Marker recommendation: use Average beat for initial teaching landmarks because it suppresses random noise.",
+            ]
+        else:
+            lines = [
+                "R-centered complexes method",
+                "- R peaks are detected on the filtered ECG.",
+                "- Each valid complex is shown on a relative time axis with R = 0 ms.",
+                "- Complexes lacking enough pre-R or post-R samples are rejected.",
+                "- Each complex uses a local pre-R baseline so drift does not dominate the overlay.",
+                "- Colour coding separates individual beats; the average is shown as the reference waveform.",
+                "- Do not place final markers in All complexes view; inspect consistency, then mark the Average beat.",
+            ]
+
+        return "\n".join(lines)
+
+    def build_ecg_calipers_measurement_placeholder(self):
+        key = self.current_ecg_review_view_key()
+        if key == "average":
+            return (
+                "Caliper measurements will appear here.\n\n"
+                "Recommendation: place manual P/QRS/T landmarks in Average beat view first. "
+                "This gives a stable teaching waveform when complexes are consistent. "
+                "Then verify any doubtful point in Filtered ECG and Raw views."
+            )
+        if key == "rcentered":
+            return (
+                "Caliper measurements will appear here.\n\n"
+                "R-centered complexes are mainly for consistency review and noisy-beat detection. "
+                "Use Complex selector to inspect individual beats. Place final teaching markers on Average beat."
+            )
+        if key == "raw":
+            return (
+                "Caliper measurements will appear here.\n\n"
+                "Raw view is for acquisition-quality inspection. Use it to check drift, clipping, and whether a feature exists before filtering."
+            )
+        return (
+            "Caliper measurements will appear here.\n\n"
+            "Filtered ECG is the single-beat review waveform. For teaching landmarks, prefer Average beat first, then verify here."
+        )
+
+    def update_ecg_calipers_right_panels(self):
+        try:
+            # Caliper Measurements box
+            try:
+                measurement_box = getattr(self, "summary_box", None)
+                if measurement_box is None:
+                    measurement_box = self.find_measurement_text_box()
+                if measurement_box is not None:
+                    txt = measurement_box.toPlainText()
+                    if (
+                        not txt.strip()
+                        or "Caliper measurements will appear here" in txt
+                        or "Recommendation:" in txt
+                        or "R-centered complexes are mainly" in txt
+                        or "Raw view is for acquisition-quality" in txt
+                        or "Filtered ECG is the single-beat" in txt
+                    ):
+                        measurement_box.setPlainText(self.build_ecg_calipers_measurement_placeholder())
+            except Exception:
+                pass
+
+            # Navigation box
+            try:
+                if hasattr(self, "info_box"):
+                    self.info_box.setPlainText(self.build_ecg_calipers_navigation_text())
+                else:
+                    nav_box = self.find_navigation_text_box()
+                    if nav_box is not None:
+                        nav_box.setPlainText(self.build_ecg_calipers_navigation_text())
+            except Exception:
+                pass
+
+            # Method box
+            try:
+                if hasattr(self, "method_text_box"):
+                    self.method_text_box.setPlainText(self.build_ecg_calipers_method_text())
+            except Exception:
+                pass
+
+        except Exception:
+            pass
+
+
     def refresh_plot(self):
         self.ensure_p_marker_drag_signals()
+        self.install_ecg_navigation_event_filters()
+        self.install_ecg_arrow_shortcuts()
         old_x_range = self.get_x_range_for_refresh()
         if self.current_time_s is None or not self.current_channel_data:
             return
@@ -3105,10 +3520,48 @@ class ECGCalipersPanel(QWidget):
         view = self.view_box.currentText()
         if view.startswith("Filtered"):
             y = self.make_filtered_ecg(t, y_raw, notch=self.notch_box.isChecked())
-            self.current_display_label = view
+            self.current_display_label = "Filtered ECG 0.5-40 Hz"
         else:
             y = y_raw
             self.current_display_label = "Raw"
+
+        self.current_r_centered_traces = None
+        self.current_r_centered_average = None
+        if not str(view).startswith("R-centered"):
+            self.update_r_complex_selector(0, enable=False)
+        if str(view).startswith("R-centered") or str(view).startswith("Average"):
+            epoch_t, traces, avg = self.make_r_centered_epochs(
+                t,
+                y_raw,
+                notch=self.notch_box.isChecked() if hasattr(self, "notch_box") else True
+            )
+            if len(epoch_t) > 0 and len(avg) == len(epoch_t):
+                t = epoch_t
+                y = avg
+                self.current_r_centered_traces = traces
+                self.current_r_centered_average = avg
+                self.update_r_complex_selector(
+                    int(traces.shape[0]) if hasattr(traces, 'shape') else 0,
+                    enable=str(view).startswith('R-centered')
+                )
+                try:
+                    n_epoch = int(traces.shape[0]) if hasattr(traces, 'shape') else 0
+                    msg = f"R ref: 0 ms | averaged {n_epoch} beats"
+                    if getattr(self, "current_r_epoch_first_incomplete_rejected", False):
+                        msg += " | first incomplete rejected"
+                    elif int(getattr(self, "current_r_epoch_edge_rejected_count", 0)) > 0:
+                        msg += f" | edge rejected {int(getattr(self, 'current_r_epoch_edge_rejected_count', 0))}"
+                    if hasattr(self, "r_status_label"):
+                        self.r_status_label.setText(msg)
+                except Exception:
+                    pass
+                if str(view).startswith("R-centered"):
+                    self.current_display_label = "R-centered complexes"
+                else:
+                    self.current_display_label = "Average beat"
+            else:
+                self.update_r_complex_selector(0, enable=False)  # no valid R-centered epochs
+                self.current_display_label = str(view)
 
         self.current_template_overlay_y = None
         self.current_teaching_template_y = None
@@ -3207,6 +3660,26 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             pass
 
+        try:
+            self.enforce_calipers_view_interaction()
+        except Exception:
+            pass
+
+        # Synchronous R reference geometry for Raw/Filtered.
+        # This avoids the visible load/view-change jitter caused by delayed
+        # QTimer centering after the plot has already appeared.
+        try:
+            if not self.is_epoch_review_view() and self.ensure_r_peaks_for_arrow_navigation():
+                self.center_view_on_r_peak_number(getattr(self, "selected_peak_number", None))
+        except Exception:
+            pass
+
+        try:
+            self.update_ecg_calipers_right_panels()
+        except Exception:
+            pass
+
+
     def detect_r_peaks_clicked(self):
         # Detect R peaks on the currently displayed signal using the shared
         # Analysis ECG detector. This gives ECG Calipers the same internal
@@ -3282,6 +3755,15 @@ class ECGCalipersPanel(QWidget):
 
     def redraw_plot_with_r_peaks(self, preserve_view=True):
         self.ensure_p_marker_drag_signals()
+        # Raw view: keep the raw ADC trace visually raw.
+        # Do not draw filtered R peak markers or R reference overlays here.
+        try:
+            if not self.should_show_r_reference_overlay():
+                self.refresh_plot()
+                return
+        except Exception:
+            pass
+
         if self.current_plot_t is None or self.current_plot_y is None:
             return
 
@@ -3357,6 +3839,12 @@ class ECGCalipersPanel(QWidget):
             except Exception:
                 pass
         self.draw_template_opal_markers()
+
+        try:
+            self.enforce_calipers_view_interaction()
+        except Exception:
+            pass
+
 
     def update_measurement_summary(self):
         # Compatibility wrapper.
@@ -5040,60 +5528,379 @@ class ECGCalipersPanel(QWidget):
         except Exception as e:
             self.info_box.setText(f"Could not select nearest R peak:\n{e}")
 
-    def previous_beat_clicked(self):
+    def install_ecg_navigation_event_filters(self):
+        # Intercept arrow keys even when focus is inside combo boxes or the plot.
         try:
-            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
-                self.silent_detect_r_for_navigation()
-
-            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+            if getattr(self, "_ecg_nav_event_filters_installed", False):
                 return
 
-            complete = self.get_complete_pqrst_peak_numbers()
-            current = self.selected_peak_number
+            widgets = [self]
+            for name in [
+                "view_box", "r_complex_box", "plot", "time_scroll",
+                "prev_beat_btn", "next_beat_btn", "detect_r_btn"
+            ]:
+                obj = getattr(self, name, None)
+                if obj is not None:
+                    widgets.append(obj)
 
-            if complete:
-                if current is None:
-                    target = complete[0]
-                else:
-                    smaller = [n for n in complete if int(n) < int(current)]
-                    target = smaller[-1] if smaller else complete[0]
+            for obj in widgets:
+                try:
+                    obj.installEventFilter(self)
+                except Exception:
+                    pass
+
+            self._ecg_nav_event_filters_installed = True
+        except Exception:
+            pass
+
+    def cycle_calipers_view(self, step):
+        try:
+            if not hasattr(self, "view_box"):
+                return False
+            n = int(self.view_box.count())
+            if n <= 0:
+                return False
+            idx = int(self.view_box.currentIndex())
+            new_idx = (idx + int(step)) % n
+            self.view_box.setCurrentIndex(new_idx)
+            return True
+        except Exception:
+            return False
+
+    def cycle_r_complex_selection(self, step):
+        try:
+            if not hasattr(self, "r_complex_box") or not self.r_complex_box.isEnabled():
+                return False
+            n = int(self.r_complex_box.count())
+            if n <= 1:
+                return False
+            idx = int(self.r_complex_box.currentIndex())
+            new_idx = (idx + int(step)) % n
+            self.r_complex_box.setCurrentIndex(new_idx)
+            return True
+        except Exception:
+            return False
+
+    def handle_calipers_arrow_key(self, key):
+        try:
+            # Up/Down always move between the four views.
+            if key == Qt.Key_Down:
+                return self.cycle_calipers_view(+1)
+
+            if key == Qt.Key_Up:
+                return self.cycle_calipers_view(-1)
+
+            # R-centered complexes: Left/Right move between isolated complexes.
+            if self.is_epoch_review_view():
+                view = self.view_box.currentText() if hasattr(self, "view_box") else ""
+                if str(view).startswith("R-centered"):
+                    if key == Qt.Key_Right:
+                        return self.cycle_r_complex_selection(+1)
+                    if key == Qt.Key_Left:
+                        return self.cycle_r_complex_selection(-1)
+                return True
+
+            # Raw/Filtered: Left/Right move between R peaks.
+            if key == Qt.Key_Left:
+                self.previous_beat_clicked()
+                return True
+            if key == Qt.Key_Right:
+                self.next_beat_clicked()
+                return True
+
+        except Exception:
+            return False
+        return False
+
+
+    def eventFilter(self, obj, event):
+        try:
+            if event is not None and event.type() == QEvent.KeyPress:
+                key = event.key()
+                if key in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+                    handled = self.handle_calipers_arrow_key(key)
+                    event.accept()
+                    return True if handled else True
+        except Exception:
+            pass
+
+        try:
+            return super().eventFilter(obj, event)
+        except Exception:
+            return False
+
+
+    def is_epoch_review_view(self):
+        # Review views are not normal time-series navigation views.
+        try:
+            view = self.view_box.currentText() if hasattr(self, "view_box") else ""
+            label = getattr(self, "current_display_label", "")
+            view = str(view)
+            label = str(label)
+            return (
+                view.startswith("R-centered")
+                or view.startswith("Average")
+                or label.startswith("R-centered")
+                or label.startswith("Average")
+            )
+        except Exception:
+            return False
+
+    def enforce_calipers_view_interaction(self):
+        # Final interaction guard after plotting/autorange.
+        try:
+            loaded = self.is_ecg_data_loaded() if hasattr(self, "is_ecg_data_loaded") else True
+            self.set_plot_interaction_loaded_state(bool(loaded))
+            try:
+                self.plot.getViewBox().setMouseMode(pg.ViewBox.RectMode)
+            except Exception:
+                pass
+
+            if hasattr(self, "time_scroll"):
+                self.time_scroll.setEnabled(bool(loaded and not self.is_epoch_review_view()))
+        except Exception:
+            pass
+
+
+    def current_visible_window_seconds(self, fallback=0.80):
+        try:
+            if not hasattr(self, "plot") or self.plot is None:
+                return float(fallback)
+            xr = self.plot.getViewBox().viewRange()[0]
+            width = float(xr[1] - xr[0])
+            if np.isfinite(width) and width > 0.05:
+                return width
+        except Exception:
+            pass
+        return float(fallback)
+
+    def ensure_r_peaks_for_arrow_navigation(self):
+        # Ensure self.detected_r_peaks exists for Raw/Filtered arrow navigation.
+        try:
+            peaks = getattr(self, "detected_r_peaks", None)
+            if peaks is not None and len(peaks) > 0:
+                return True
+        except Exception:
+            pass
+
+        try:
+            self.silent_detect_r_for_navigation()
+            peaks = getattr(self, "detected_r_peaks", None)
+            return peaks is not None and len(peaks) > 0
+        except Exception:
+            pass
+
+        try:
+            ch, t, y = self.get_calipers_filtered_signal_for_detection()
+            result = detect_ecg_r_peaks(np.asarray(t, dtype=float), np.asarray(y, dtype=float))
+            if hasattr(self, "parse_r_peak_result_to_indices"):
+                peaks = self.parse_r_peak_result_to_indices(result)
             else:
-                current = int(current or 0)
-                target = max(0, current - 1)
+                if isinstance(result, dict):
+                    peaks = result.get("peaks", result.get("r_peaks", []))
+                elif isinstance(result, (list, tuple)) and len(result) > 0:
+                    peaks = result[0]
+                else:
+                    peaks = result
+            self.detected_r_peaks = np.asarray(peaks, dtype=int)
+            return len(self.detected_r_peaks) > 0
+        except Exception:
+            return False
 
-            self.focus_peak_number_as_complete_beat(target)
+    def r_reference_window_seconds(self):
+        # Match the R-centered/Average display geometry.
+        # R = 0 is plotted at the same pixel location as Raw/Filtered selected R.
+        return 0.20, 0.55
+
+    def install_ecg_arrow_shortcuts(self):
+        # QShortcut is more reliable than keyPressEvent alone because focus may
+        # be inside a combo box, button, or pyqtgraph item.
+        try:
+            if getattr(self, "_ecg_arrow_shortcuts_installed", False):
+                return
+
+            self._ecg_arrow_shortcuts = []
+
+            shortcut_specs = [
+                (Qt.Key_Left, lambda: self.handle_calipers_arrow_key(Qt.Key_Left)),
+                (Qt.Key_Right, lambda: self.handle_calipers_arrow_key(Qt.Key_Right)),
+                (Qt.Key_Up, lambda: self.handle_calipers_arrow_key(Qt.Key_Up)),
+                (Qt.Key_Down, lambda: self.handle_calipers_arrow_key(Qt.Key_Down)),
+            ]
+
+            for key, callback in shortcut_specs:
+                sc = QShortcut(QKeySequence(key), self)
+                try:
+                    sc.setContext(Qt.WidgetWithChildrenShortcut)
+                except Exception:
+                    pass
+                sc.activated.connect(callback)
+                self._ecg_arrow_shortcuts.append(sc)
+
+            self._ecg_arrow_shortcuts_installed = True
         except Exception as e:
             try:
-                self.log_message(f"Previous beat navigation failed: {e}")
+                self.log_message(f"Could not install ECG arrow shortcuts: {e}")
+            except Exception:
+                pass
+
+    def choose_stable_navigation_peak_number(self, requested_peak_number=None):
+        # Pick the first complete PQRST beat when no explicit R index is
+        # requested. This prevents loading/refresh from briefly showing the
+        # first edge-truncated beat before moving to the complete beat.
+        try:
+            peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            if len(peaks) == 0:
+                return None
+
+            if requested_peak_number is not None:
+                requested_peak_number = int(max(0, min(int(requested_peak_number), len(peaks) - 1)))
+                return requested_peak_number
+
+            selected = getattr(self, "selected_peak_number", None)
+            if selected is not None:
+                selected = int(max(0, min(int(selected), len(peaks) - 1)))
+                return selected
+
+            # Prefer the already-existing complete-beat selector when available.
+            try:
+                complete = self.get_complete_pqrst_peak_numbers()
+                if complete is not None and len(complete) > 0:
+                    return int(complete[0])
+            except Exception:
+                pass
+
+            try:
+                first_complete = self.choose_first_complete_peak_number()
+                if first_complete is not None:
+                    return int(first_complete)
+            except Exception:
+                pass
+
+            # Last fallback: require enough pre-R and post-R space for the
+            # review window. This also rejects the first edge-truncated beat.
+            try:
+                if self.current_plot_t is not None:
+                    t = np.asarray(self.current_plot_t, dtype=float)
+                    pre_s, post_s = self.r_reference_window_seconds() if hasattr(self, "r_reference_window_seconds") else (0.20, 0.55)
+                    for i, p in enumerate(peaks):
+                        p = int(p)
+                        if 0 <= p < len(t):
+                            rt = float(t[p])
+                            if rt - float(pre_s) >= float(t[0]) and rt + float(post_s) <= float(t[-1]):
+                                return int(i)
+            except Exception:
+                pass
+
+            return 0
+        except Exception:
+            return 0
+
+    def center_view_on_r_peak_number(self, peak_number=None, window_s=None):
+        # Center Raw/Filtered view on the selected R peak.
+        # Does not change y-range, so vertical drift/pan remains controlled.
+        try:
+            if self.is_epoch_review_view():
+                return False
+
+            if not self.ensure_r_peaks_for_arrow_navigation():
+                return False
+
+            peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            if len(peaks) == 0:
+                return False
+
+            peak_number = self.choose_stable_navigation_peak_number(peak_number)
+            if peak_number is None:
+                peak_number = 0
+
+            peak_number = int(max(0, min(int(peak_number), len(peaks) - 1)))
+            self.selected_peak_number = peak_number
+
+            if self.current_plot_t is None:
+                return False
+
+            t = np.asarray(self.current_plot_t, dtype=float)
+            idx = int(peaks[peak_number])
+            if idx < 0 or idx >= len(t):
+                return False
+
+            center = float(t[idx])
+            if not np.isfinite(center):
+                return False
+
+            if window_s is None:
+                pre_s, post_s = self.r_reference_window_seconds()
+                self.plot.setXRange(center - float(pre_s), center + float(post_s), padding=0)
+            else:
+                width = float(window_s)
+                width = max(0.20, min(width, 3.00))
+                self.plot.setXRange(center - width / 2.0, center + width / 2.0, padding=0)
+
+            try:
+                if hasattr(self, "r_status_label"):
+                    try:
+                        complete_count = len(self.get_complete_pqrst_peak_numbers()) if hasattr(self, "get_complete_pqrst_peak_numbers") else 0
+                    except Exception:
+                        complete_count = 0
+                    self.r_status_label.setText(f"R: {center:.3f} s | beat {peak_number + 1}/{len(peaks)} | complete {complete_count}/{len(peaks)}")
+            except Exception:
+                pass
+
+            return True
+        except Exception as e:
+            try:
+                self.log_message(f"Could not center R peak: {e}")
+            except Exception:
+                pass
+            return False
+
+    def previous_beat_clicked(self):
+        try:
+            if self.is_epoch_review_view():
+                return
+            if not self.ensure_r_peaks_for_arrow_navigation():
+                return
+
+            peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            if len(peaks) == 0:
+                return
+
+            current = getattr(self, "selected_peak_number", None)
+            if current is None:
+                current = 0
+
+            target = max(0, int(current) - 1)
+            self.selected_peak_number = target
+            self.center_view_on_r_peak_number(target)
+        except Exception as e:
+            try:
+                self.log_message(f"Previous R navigation failed: {e}")
             except Exception:
                 pass
 
 
     def next_beat_clicked(self):
         try:
-            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
-                self.silent_detect_r_for_navigation()
-
-            if getattr(self, "detected_r_peaks", None) is None or len(self.detected_r_peaks) == 0:
+            if self.is_epoch_review_view():
+                return
+            if not self.ensure_r_peaks_for_arrow_navigation():
                 return
 
-            complete = self.get_complete_pqrst_peak_numbers()
-            current = self.selected_peak_number
+            peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
+            if len(peaks) == 0:
+                return
 
-            if complete:
-                if current is None:
-                    target = complete[0]
-                else:
-                    larger = [n for n in complete if int(n) > int(current)]
-                    target = larger[0] if larger else complete[-1]
-            else:
-                current = int(current or 0)
-                target = min(len(self.detected_r_peaks) - 1, current + 1)
+            current = getattr(self, "selected_peak_number", None)
+            if current is None:
+                current = 0
 
-            self.focus_peak_number_as_complete_beat(target)
+            target = min(len(peaks) - 1, int(current) + 1)
+            self.selected_peak_number = target
+            self.center_view_on_r_peak_number(target)
         except Exception as e:
             try:
-                self.log_message(f"Next beat navigation failed: {e}")
+                self.log_message(f"Next R navigation failed: {e}")
             except Exception:
                 pass
 
@@ -5156,6 +5963,213 @@ class ECGCalipersPanel(QWidget):
             lines.append("post-RR interval: not available")
 
         return "\n".join(lines)
+
+
+
+
+
+    def update_r_complex_selector(self, count, enable=False):
+        # Populate the R-centered complex selector without causing recursive plot refresh.
+        try:
+            if not hasattr(self, "r_complex_box"):
+                return
+
+            count = int(max(0, count))
+            old_text = self.r_complex_box.currentText()
+
+            self.r_complex_box.blockSignals(True)
+            self.r_complex_box.clear()
+            self.r_complex_box.addItem("All complexes")
+            for i in range(count):
+                self.r_complex_box.addItem(f"Complex {i + 1}")
+
+            # Preserve selection if possible.
+            if old_text:
+                idx = self.r_complex_box.findText(old_text)
+                if idx >= 0:
+                    self.r_complex_box.setCurrentIndex(idx)
+                else:
+                    self.r_complex_box.setCurrentIndex(0)
+            else:
+                self.r_complex_box.setCurrentIndex(0)
+
+            self.r_complex_box.setEnabled(bool(enable and count > 0))
+            self.r_complex_box.blockSignals(False)
+        except Exception:
+            try:
+                self.r_complex_box.blockSignals(False)
+            except Exception:
+                pass
+
+    def get_selected_r_complex_index(self, count=None):
+        # None means all complexes. Otherwise returns zero-based complex index.
+        try:
+            if not hasattr(self, "r_complex_box") or not self.r_complex_box.isEnabled():
+                return None
+
+            idx = int(self.r_complex_box.currentIndex())
+            if idx <= 0:
+                return None
+
+            selected = idx - 1
+            if count is not None and selected >= int(count):
+                return None
+            return selected
+        except Exception:
+            return None
+
+    def r_complex_selection_changed(self):
+        try:
+            view = self.view_box.currentText() if hasattr(self, "view_box") else ""
+            if str(view).startswith("R-centered"):
+                self.refresh_plot()
+        except Exception:
+            pass
+        try:
+            self.update_ecg_calipers_right_panels()
+        except Exception:
+            pass
+
+
+    def parse_r_peak_result_to_indices(self, result):
+        # Accept several possible detector return formats.
+        try:
+            if result is None:
+                return np.array([], dtype=int)
+
+            if isinstance(result, dict):
+                for key in ["peaks", "r_peaks", "indices", "peak_indices", "r_peak_indices"]:
+                    if key in result:
+                        return np.asarray(result[key], dtype=int)
+
+            if isinstance(result, tuple) or isinstance(result, list):
+                if len(result) == 0:
+                    return np.array([], dtype=int)
+                first = result[0]
+                if isinstance(first, dict):
+                    return self.parse_r_peak_result_to_indices(first)
+                return np.asarray(first, dtype=int)
+
+            return np.asarray(result, dtype=int)
+        except Exception:
+            return np.array([], dtype=int)
+
+    def detect_r_peaks_for_epoch_review(self, t, y_filtered):
+        # R-centered views need stable R anchors. This detector is for alignment
+        # of complexes, not final diagnostic interpretation.
+        try:
+            result = detect_ecg_r_peaks(np.asarray(t, dtype=float), np.asarray(y_filtered, dtype=float))
+            peaks = self.parse_r_peak_result_to_indices(result)
+            if len(peaks) > 0:
+                return peaks
+        except Exception:
+            pass
+
+        # Fallback detector when the shared detector signature/return changes.
+        try:
+            from scipy.signal import find_peaks
+            t = np.asarray(t, dtype=float)
+            y = np.asarray(y_filtered, dtype=float)
+            finite = np.isfinite(t) & np.isfinite(y)
+            if finite.sum() < 10:
+                return np.array([], dtype=int)
+
+            dt = float(np.nanmedian(np.diff(t[finite])))
+            if not np.isfinite(dt) or dt <= 0:
+                dt = 0.001
+            fs = 1.0 / dt
+
+            yy = y.copy()
+            yy[~np.isfinite(yy)] = np.nanmedian(yy[finite])
+            span = float(np.nanpercentile(yy, 99) - np.nanpercentile(yy, 1))
+            prominence = max(20.0, 0.20 * span)
+            distance = max(1, int(0.35 * fs))
+
+            peaks, _props = find_peaks(yy, distance=distance, prominence=prominence)
+            return np.asarray(peaks, dtype=int)
+        except Exception:
+            return np.array([], dtype=int)
+
+    def make_r_centered_epochs(self, t, y_raw, notch=True, pre_s=0.20, post_s=0.55):
+        # Build R-centered ECG complexes from the normal monitor-style filtered
+        # trace. Returns relative time, all valid complexes, and their average.
+        try:
+            t = np.asarray(t, dtype=float)
+            y_raw = np.asarray(y_raw, dtype=float)
+            y_filtered = self.make_filtered_ecg(t, y_raw, notch=notch)
+
+            finite = np.isfinite(t) & np.isfinite(y_filtered)
+            if finite.sum() < 10:
+                return np.array([], dtype=float), np.empty((0, 0), dtype=float), np.array([], dtype=float)
+
+            dt = float(np.nanmedian(np.diff(t[finite])))
+            if not np.isfinite(dt) or dt <= 0:
+                dt = 0.001
+
+            n = int(round((float(pre_s) + float(post_s)) / dt)) + 1
+            rel_t = np.linspace(-float(pre_s), float(post_s), n)
+
+            peaks = self.detect_r_peaks_for_epoch_review(t, y_filtered)
+            traces = []
+            self.current_r_epoch_first_incomplete_rejected = False
+            self.current_r_epoch_edge_rejected_count = 0
+
+            for beat_i, p in enumerate(np.asarray(peaks, dtype=int)):
+                if p < 0 or p >= len(t):
+                    continue
+                r_time = float(t[p])
+                if not np.isfinite(r_time):
+                    continue
+                if r_time + rel_t[0] < float(t[0]) or r_time + rel_t[-1] > float(t[-1]):
+                    self.current_r_epoch_edge_rejected_count = int(getattr(self, 'current_r_epoch_edge_rejected_count', 0)) + 1
+                    if int(beat_i) == 0:
+                        self.current_r_epoch_first_incomplete_rejected = True
+                    continue
+
+                yy = np.interp(r_time + rel_t, t, y_filtered)
+
+                # Put each complex on a comparable local baseline so the
+                # summated view is not dominated by slow drift.
+                base_mask = (rel_t >= -0.25) & (rel_t <= -0.08)
+                if np.any(base_mask):
+                    base = float(np.nanmedian(yy[base_mask]))
+                else:
+                    base = float(np.nanmedian(yy))
+                yy = yy - base
+
+                if np.all(np.isfinite(yy)):
+                    traces.append(yy)
+
+            if len(traces) == 0:
+                return rel_t, np.empty((0, len(rel_t)), dtype=float), np.zeros_like(rel_t)
+
+            traces = np.asarray(traces, dtype=float)
+
+            # Reject extreme outlier complexes only for display averaging.
+            try:
+                ptp = np.nanmax(traces, axis=1) - np.nanmin(traces, axis=1)
+                med = float(np.nanmedian(ptp))
+                if np.isfinite(med) and med > 0:
+                    keep = (ptp > 0.35 * med) & (ptp < 2.5 * med)
+                    if keep.sum() >= 3:
+                        traces = traces[keep]
+            except Exception:
+                pass
+
+            avg = np.nanmean(traces, axis=0)
+
+            try:
+                self.current_r_centered_count = int(traces.shape[0])
+            except Exception:
+                pass
+
+            return rel_t, traces, avg
+        except Exception as e:
+            try:
+                self.log_message(f"R-centered ECG review failed: {e}")
+            except Exception:
+                pass
+            return np.array([], dtype=float), np.empty((0, 0), dtype=float), np.array([], dtype=float)
 
     def make_filtered_ecg(self, t, y, notch=True):
         try:
@@ -5239,3 +6253,9 @@ class ECGCalipersPanel(QWidget):
             self.apply_timebase_limits(self.current_plot_t, self.current_plot_y, set_full_view=True)
         else:
             self.plot.enableAutoRange()
+
+        try:
+            self.enforce_calipers_view_interaction()
+        except Exception:
+            pass
+
