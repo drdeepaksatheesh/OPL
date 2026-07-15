@@ -17,6 +17,7 @@ from app.ecg_calipers_panel import ECGCalipersPanel
 from app.ecg_rr_pairs_panel import ECGRRPairsPanel
 from app.ecg_rr_triplets_panel import ECGRRTripletsPanel
 from app.ecg_rr_nn_table_panel import ECGRRNNTablePanel
+from app.ecg_visual_hrv_panel import ECGVisualHRVPanel
 from app.theme import build_stylesheet
 
 
@@ -51,6 +52,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.tabs.addTab(ECGRRPairsPanel(), "RR Pairs")
         self.tabs.addTab(ECGRRTripletsPanel(), "RR Triplets")
         self.tabs.addTab(ECGRRNNTablePanel(), "RR / NN Table")
+        self.tabs.addTab(ECGVisualHRVPanel(), "Visual HRV")
         self.tabs.addTab(self.analysis_panel, "Analysis")
         self.tabs.addTab(self.results_panel, "Results")
         self.tabs.addTab(self.compare_panel, "Compare")
