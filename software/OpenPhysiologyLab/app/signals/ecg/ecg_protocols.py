@@ -153,7 +153,7 @@ ECG_PROTOCOLS = {
             "baseline position, R-peak timing usability, and basic morphology usability."
         ),
         "duration_seconds": 60,
-        "duration_text": "01:00:00",
+        "duration_text": "00:01:00.000",
         "sample_rate_hz": 500,
         "channels": 1,
         "lead_config_key": "RA_LL_LIMB_AXIS_NPG_PRACTICAL",
@@ -184,7 +184,7 @@ ECG_PROTOCOLS = {
             "Uses 1000 Hz target sampling to improve onset/offset timing visibility."
         ),
         "duration_seconds": 60,
-        "duration_text": "01:00:00",
+        "duration_text": "00:01:00.000",
         "sample_rate_hz": 1000,
         "channels": 1,
         "electrode_placement": "RA-LL limb ECG / ECG waveform study",
@@ -218,13 +218,13 @@ ECG_PROTOCOLS = {
     "ECG_RESTING_5MIN": {
         "signal_type": "ECG",
         "protocol_name": "ECG_RESTING_5MIN",
-        "display_name": "Resting ECG / HRV - 5 min",
+        "display_name": "Resting ECG - 5 min",
         "description": (
             "Five-minute resting ECG intended for basic time-domain HRV workflows "
             "after headroom has already been checked."
         ),
         "duration_seconds": 300,
-        "duration_text": "05:00:00",
+        "duration_text": "00:05:00.000",
         "sample_rate_hz": 500,
         "channels": 1,
         "lead_config_key": "RA_LL_LIMB_AXIS_NPG_PRACTICAL",
@@ -245,6 +245,117 @@ ECG_PROTOCOLS = {
             "This app currently provides basic time-domain HRV only."
         ),
     },
+    # Paper and signal-generator calibration workflow protocols
+    # Setup/metadata presets only; they do not certify diagnostic equivalence.
+    "ECG_CAL_NOISE_FLOOR_30S": {'signal_type': 'ECG',
+         'protocol_name': 'ECG_CAL_NOISE_FLOOR_30S',
+         'display_name': 'Calibration: input noise floor - 30 s',
+         'description': 'Device/input noise-floor check before human ECG recording. Use an isolated/dummy '
+                        'input condition; no human subject is connected.',
+         'duration_seconds': 30,
+         'duration_text': '00:00:30.000',
+         'sample_rate_hz': 500,
+         'channels': 1,
+         'lead_config_key': 'RA_LL_LIMB_AXIS_NPG_PRACTICAL',
+         'electrode_placement': 'No human subject; isolated/dummy input condition for baseline noise-floor '
+                                'check.',
+         'filter_preset_key': 'basic_ecg_0_5_40_notch',
+         'machine_evaluation_focus': ['baseline ADC noise',
+                                      '50 Hz pickup',
+                                      'USB/laptop/environment noise',
+                                      'calibration provenance'],
+         'recommended_use': 'Use before paper recordings to document acquisition-chain noise floor.',
+         'interpretation_note': 'Calibration-only preset. Do not connect signal-generator or '
+                                'device-calibration wiring to a human subject.'},
+
+    "ECG_CAL_SIGNAL_GENERATOR_TIMEBASE_60S": {'signal_type': 'ECG',
+         'protocol_name': 'ECG_CAL_SIGNAL_GENERATOR_TIMEBASE_60S',
+         'display_name': 'Calibration: signal-generator timebase - 60 s',
+         'description': 'Known periodic signal check for sampling interval, dropped samples, and duration '
+                        'consistency.',
+         'duration_seconds': 60,
+         'duration_text': '00:01:00.000',
+         'sample_rate_hz': 500,
+         'channels': 1,
+         'lead_config_key': 'RA_LL_LIMB_AXIS_NPG_PRACTICAL',
+         'electrode_placement': 'Signal generator / simulator to ECG input through safe isolated '
+                                'low-amplitude test connection; no human subject.',
+         'filter_preset_key': 'basic_ecg_0_5_40_notch',
+         'machine_evaluation_focus': ['measured sampling interval',
+                                      'expected versus observed waveform period',
+                                      'dropped sample or timing irregularity screen',
+                                      'duration consistency'],
+         'recommended_use': 'Use a known periodic signal to verify timebase behaviour before ECG '
+                            'recordings.',
+         'interpretation_note': 'Device-only calibration preset. Do not connect a signal generator to '
+                                'electrodes on a human subject.'},
+
+    "ECG_CAL_SIGNAL_GENERATOR_AMPLITUDE_60S": {'signal_type': 'ECG',
+         'protocol_name': 'ECG_CAL_SIGNAL_GENERATOR_AMPLITUDE_60S',
+         'display_name': 'Calibration: signal-generator amplitude - 60 s',
+         'description': 'Known low-amplitude signal check for ADC response, peak-to-peak counts, and '
+                        'clipping/headroom.',
+         'duration_seconds': 60,
+         'duration_text': '00:01:00.000',
+         'sample_rate_hz': 500,
+         'channels': 1,
+         'lead_config_key': 'RA_LL_LIMB_AXIS_NPG_PRACTICAL',
+         'electrode_placement': 'Known low-amplitude signal through safe attenuation / simulator output; '
+                                'no human subject.',
+         'filter_preset_key': 'basic_ecg_0_5_40_notch',
+         'machine_evaluation_focus': ['raw ADC count range',
+                                      'peak-to-peak response to known input',
+                                      'clipping and rail approach',
+                                      'calibration factor candidate'],
+         'recommended_use': 'Use for calibration notes and later voltage-scaling metadata.',
+         'interpretation_note': 'Use only safe, isolated, low-amplitude test signals. Do not connect this '
+                                'calibration wiring to a human subject.'},
+
+    "ECG_CAL_ECG_LIKE_WAVEFORM_60S": {'signal_type': 'ECG',
+         'protocol_name': 'ECG_CAL_ECG_LIKE_WAVEFORM_60S',
+         'display_name': 'Calibration: ECG-like waveform - 60 s',
+         'description': 'ECG simulator or ECG-like waveform check for the display, filtering, R-peak, and '
+                        'RR extraction pipeline.',
+         'duration_seconds': 60,
+         'duration_text': '00:01:00.000',
+         'sample_rate_hz': 500,
+         'channels': 1,
+         'lead_config_key': 'RA_LL_LIMB_AXIS_NPG_PRACTICAL',
+         'electrode_placement': 'ECG simulator or ECG-like test waveform to ECG input; no human subject.',
+         'filter_preset_key': 'basic_ecg_0_5_40_notch',
+         'machine_evaluation_focus': ['R-peak detectability',
+                                      'RR extraction from known rhythm',
+                                      'filter/display behaviour',
+                                      'workflow readiness'],
+         'recommended_use': 'Use as the end-to-end calibration bridge between simple generator checks and '
+                            'real resting ECG.',
+         'interpretation_note': 'Simulator/waveform calibration preset. It supports workflow readiness; it '
+                                'does not validate diagnostic equivalence.'},
+
+    "ECG_RESTING_15MIN": {'signal_type': 'ECG',
+         'protocol_name': 'ECG_RESTING_15MIN',
+         'display_name': 'Resting ECG - 15 min',
+         'description': 'Fifteen-minute resting ECG intended for the OPL ECG-to-HRV paper workflow.',
+         'duration_seconds': 900,
+         'duration_text': '00:15:00.000',
+         'sample_rate_hz': 500,
+         'channels': 1,
+         'lead_config_key': 'RA_LL_LIMB_AXIS_NPG_PRACTICAL',
+         'electrode_placement': 'RA-LL limb ECG / resting ECG',
+         'filter_preset_key': 'basic_ecg_0_5_40_notch',
+         'machine_evaluation_focus': ['ADC baseline',
+                                      'low/high clipping',
+                                      'missing samples',
+                                      'R-peak timing usability',
+                                      'RR interval quality',
+                                      'NN interval readiness',
+                                      'HRV workflow readiness'],
+         'recommended_use': 'Main paper recording preset: 15 subjects, 3 separate sessions, 15 minutes per '
+                            'session.',
+         'interpretation_note': 'This is the recording preset. HRV is derived later through RR/NN Table '
+                                'and Visual HRV; do not use the recording protocol name itself to claim '
+                                'HRV validity.'},
+
 }
 
 

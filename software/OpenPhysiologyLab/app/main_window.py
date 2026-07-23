@@ -58,6 +58,18 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.tabs.addTab(self.compare_panel, "Compare")
         self.tabs.addTab(self.machine_panel, "Machine")
 
+        # OPL_FIRST_RELEASE_VISIBLE_TABS
+        # Keep the ECG -> HRV teaching workflow visible; hide unfinished later tabs.
+        _opl_visible_tabs = ['Setup', 'Recorder', 'ECG Calipers', 'RR Pairs', 'RR Triplets', 'RR / NN Table', 'Visual HRV']
+        _opl_visible_set = set(_opl_visible_tabs)
+        try:
+            for _opl_i in range(self.tabs.count() - 1, -1, -1):
+                _opl_label = str(self.tabs.tabText(_opl_i)).strip()
+                if _opl_label not in _opl_visible_set:
+                    self.tabs.removeTab(_opl_i)
+        except Exception as _opl_tab_err:
+            print('OPL tab visibility guard skipped:', _opl_tab_err)
+
         self.apply_global_dark_theme()
         self.sync_child_theme(light_mode=False)
         self.connect_recorder_to_analysis()

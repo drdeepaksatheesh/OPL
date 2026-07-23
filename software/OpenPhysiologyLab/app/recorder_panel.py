@@ -7,6 +7,7 @@ import shutil
 import hashlib
 from datetime import datetime
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -28,6 +29,12 @@ from app.theme import get_plot_palette
 from acquisition.npg_lite import NPGLite
 from acquisition.bandwidth import recommend_setup
 from acquisition.transports.serial_transport import SerialTransport
+
+try:
+    from app.protocol_registry import get_protocols_for_signal, build_recorder_config
+except Exception:
+    get_protocols_for_signal = None
+    build_recorder_config = None
 
 from analysis.signal_filters import apply_bandpass_notch
 from analysis.peak_detection import detect_general_peaks, detect_ecg_r_peaks
@@ -196,30 +203,34 @@ def calculate_file_sha256(file_path):
 
 
 class DurationInput(QLineEdit):
-    """
-    OTP-style duration input.
+    # Universal duration input.
+    #
+    # Format:
+    # HH:MM:SS.mmm
+    #
+    # Examples:
+    # 00:00:30.000 = 30 seconds
+    # 00:01:00.000 = 1 minute
+    # 00:05:00.000 = 5 minutes
+    # 00:15:00.000 = 15 minutes
+    # 01:00:00.000 = 1 hour
+    #
+    # Internally the recorder still uses numeric seconds and sample-count locking.
+    # This widget is only the human-facing time entry/display.
 
-    Format:
-    MM:SS:CC
-
-    CC = centiseconds.
-
-    Examples:
-    05:00:00 = 5 minutes
-    00:10:50 = 10.50 seconds
-    --:--:-- = manual stop mode
-    """
+    BLANK_TEXT = "--:--:--.---"
 
     def __init__(self):
         super().__init__()
         self.digits = []
-        self.setText("--:--:--")
-        self.setMaxLength(8)
-        self.setPlaceholderText("--:--:--")
+        self.setText(self.BLANK_TEXT)
+        self.setMaxLength(12)
+        self.setPlaceholderText("HH:MM:SS.mmm")
         self.setToolTip(
-            "Enter duration as MM:SS:CC.\n"
-            "Example: 05:00:00 = 5 minutes.\n"
-            "Example: 00:10:50 = 10.50 seconds.\n"
+            "Enter duration as HH:MM:SS.mmm.\\n"
+            "Digits are entered from left to right as HHMMSSmmm.\\n"
+            "Example: 000500000 = 00:05:00.000 = 5 minutes.\\n"
+            "Example: 000030000 = 00:00:30.000 = 30 seconds.\\n"
             "Reset/blank means record until Stop Recording is pressed."
         )
 
@@ -238,49 +249,136 @@ class DurationInput(QLineEdit):
             return
 
         if text.isdigit():
-            if len(self.digits) < 6:
+            if len(self.digits) < 9:
                 self.digits.append(text)
-            self.update_display()
+                self.update_display()
             return
 
-        return
+        if text in [":", ".", " "]:
+            return
+
+        super().keyPressEvent(event)
 
     def update_display(self):
-        display_digits = self.digits + ["-"] * (6 - len(self.digits))
-        text = (
-            f"{display_digits[0]}{display_digits[1]}:"
-            f"{display_digits[2]}{display_digits[3]}:"
-            f"{display_digits[4]}{display_digits[5]}"
-        )
-        self.setText(text)
+        if len(self.digits) == 0:
+            self.setText(self.BLANK_TEXT)
+            return
+
+        padded = self.digits + ["0"] * (9 - len(self.digits))
+
+        hh = "".join(padded[0:2])
+        mm = "".join(padded[2:4])
+        ss = "".join(padded[4:6])
+        mmm = "".join(padded[6:9])
+
+        self.setText(f"{hh}:{mm}:{ss}.{mmm}")
 
     def reset(self):
         self.digits = []
-        self.setText("--:--:--")
+        self.setText(self.BLANK_TEXT)
 
     def is_blank(self):
-        return len(self.digits) == 0
+        return len(self.digits) == 0 or self.text().strip() in [
+            "", self.BLANK_TEXT, "--:--:--.---", "--:--:--.---"
+        ]
+
+    @staticmethod
+    def format_duration_seconds(seconds):
+        if seconds is None:
+            return DurationInput.BLANK_TEXT
+
+        total_ms = int(round(float(seconds) * 1000.0))
+
+        if total_ms < 0:
+            total_ms = 0
+
+        ms = total_ms % 1000
+        total_s = total_ms // 1000
+        ss = total_s % 60
+        total_min = total_s // 60
+        mm = total_min % 60
+        hh = total_min // 60
+
+        if hh > 99:
+            hh = 99
+            mm = 59
+            ss = 59
+            ms = 999
+
+        return f"{hh:02d}:{mm:02d}:{ss:02d}.{ms:03d}"
+
+    def set_duration_seconds(self, seconds):
+        if seconds is None:
+            self.reset()
+            return
+
+        text = self.format_duration_seconds(seconds)
+        digits = [ch for ch in text if ch.isdigit()]
+
+        self.digits = digits[:9]
+        self.setText(text)
+
+    def set_duration_text(self, duration_text):
+        seconds, _normalised = self.parse_duration_text_value(duration_text)
+        self.set_duration_seconds(seconds)
+
+    @staticmethod
+    def parse_duration_text_value(value):
+        text = str(value or "").strip()
+
+        if text in ["", "--:--:--.---", "--:--:--.---"]:
+            return None, DurationInput.BLANK_TEXT
+
+        m = re.fullmatch(r"(\\d{1,2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,3}))?", text)
+
+        if m:
+            hours = int(m.group(1))
+            minutes = int(m.group(2))
+            seconds = int(m.group(3))
+            ms_text = (m.group(4) or "0").ljust(3, "0")[:3]
+            milliseconds = int(ms_text)
+
+            if minutes > 59:
+                raise ValueError("Minutes must be 00 to 59 in HH:MM:SS.mmm.")
+            if seconds > 59:
+                raise ValueError("Seconds must be 00 to 59 in HH:MM:SS.mmm.")
+
+            total_seconds = (hours * 3600) + (minutes * 60) + seconds + (milliseconds / 1000.0)
+
+            if total_seconds <= 0:
+                raise ValueError("Duration must be greater than zero, or reset for manual stop.")
+
+            return total_seconds, DurationInput.format_duration_seconds(total_seconds)
+
+        digits = [ch for ch in text if ch.isdigit()]
+
+        if len(digits) == 9:
+            hh = int("".join(digits[0:2]))
+            mm = int("".join(digits[2:4]))
+            ss = int("".join(digits[4:6]))
+            mmm = int("".join(digits[6:9]))
+
+            if mm > 59:
+                raise ValueError("Minutes must be 00 to 59 in HHMMSSmmm.")
+            if ss > 59:
+                raise ValueError("Seconds must be 00 to 59 in HHMMSSmmm.")
+
+            total_seconds = (hh * 3600) + (mm * 60) + ss + (mmm / 1000.0)
+
+            if total_seconds <= 0:
+                raise ValueError("Duration must be greater than zero, or reset for manual stop.")
+
+            return total_seconds, DurationInput.format_duration_seconds(total_seconds)
+
+        raise ValueError("Complete duration as HH:MM:SS.mmm or press Reset Duration.")
 
     def get_duration_seconds(self):
         if self.is_blank():
-            return None, "--:--:--"
+            return None, self.BLANK_TEXT
 
-        if len(self.digits) < 6:
-            raise ValueError("Complete duration as MM:SS:CC or press Reset Duration.")
-
-        minutes = int(self.digits[0] + self.digits[1])
-        seconds = int(self.digits[2] + self.digits[3])
-        centiseconds = int(self.digits[4] + self.digits[5])
-
-        if seconds > 59:
-            raise ValueError("Seconds must be 00 to 59.")
-
-        total_seconds = (minutes * 60) + seconds + (centiseconds / 100)
-
-        if total_seconds <= 0:
-            raise ValueError("Duration must be greater than zero, or reset for manual stop.")
-
-        return total_seconds, self.text()
+        seconds, normalised_text = self.parse_duration_text_value(self.text())
+        self.set_duration_seconds(seconds)
+        return seconds, normalised_text
 
 
 class TimeAxisItem(pg.AxisItem):
@@ -457,7 +555,22 @@ class RecorderWorker(QThread):
 
     def request_stop(self):
         self.stop_requested = True
-        self.stop_reason = "MANUAL_STOP"
+
+        # Best-effort unblock/release of serial device.
+        # Normal cleanup still happens in run() finally.
+        try:
+            device = getattr(self, "device", None)
+            if device is not None:
+                try:
+                    device.stop_streaming()
+                except Exception:
+                    pass
+                try:
+                    device.disconnect()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def request_pause(self):
         if not self.pause_requested:
@@ -555,6 +668,7 @@ class RecorderWorker(QThread):
             "end_datetime": None,
             "duration_mode": duration_mode,
             "duration_stop_rule": duration_stop_rule,
+            "target_sample_stop_policy": "sample_number_span_locked",
             "sample_count_locked": target_sample_count is not None,
             "target_sample_count": target_sample_count,
             "duration_requested_text": self.duration_text,
@@ -660,6 +774,9 @@ class RecorderWorker(QThread):
                 )
 
             last_emit_time = time.time()
+            last_stale_log_time = time.time()
+            first_recorded_sample_for_duration = None
+            max_sample_span_seen = 0
 
             while True:
                 if self.stop_requested:
@@ -669,43 +786,81 @@ class RecorderWorker(QThread):
                     self.stop_reason = "DURATION_COMPLETE"
                     break
 
-                line = device.read_sample_line()
-                parsed = device.parse_sample_line(line)
+                # Drain all immediately available serial lines first. This reduces
+                # Python readline overhead and prevents the UI from slowly falling
+                # behind during longer 500 Hz recordings.
+                lines = []
 
-                if parsed is None:
+                try:
+                    if hasattr(device, "transport") and hasattr(device.transport, "read_available_lines"):
+                        lines = device.transport.read_available_lines(max_lines=1000)
+                except Exception:
+                    lines = []
+
+                if not lines:
+                    line = device.read_sample_line()
+                    if line:
+                        lines = [line]
+
+                if not lines:
+                    now = time.time()
+                    if now - last_stale_log_time >= 2.0:
+                        self.log_signal.emit("Stream waiting: no valid sample line received in the last read window.")
+                        last_stale_log_time = now
                     continue
 
-                if self.pause_requested:
-                    continue
+                for line in lines:
+                    parsed = device.parse_sample_line(line)
 
-                pc_time_s = time.time() - pc_start
+                    if parsed is None:
+                        continue
 
-                row = {
-                    "segment_id": self.current_segment_id,
-                    "sample": parsed["sample"],
-                    "time_us": parsed["time_us"],
-                    "pc_time_s": pc_time_s,
-                    "ch1": parsed["ch1"],
-                    "ch2": parsed["ch2"],
-                    "ch3": parsed["ch3"],
-                    "ch4": parsed["ch4"],
-                    "ch5": parsed["ch5"],
-                    "ch6": parsed["ch6"],
-                }
+                    if self.pause_requested:
+                        continue
 
-                rows.append(row)
-                batch.append(row)
+                    if first_recorded_sample_for_duration is None:
+                        first_recorded_sample_for_duration = int(parsed["sample"])
 
-                if target_sample_count is not None and len(rows) >= target_sample_count:
-                    self.stop_reason = "DURATION_COMPLETE_SAMPLE_COUNT_LOCKED"
-                    break
+                    pc_time_s = time.time() - pc_start
+                    sample_span = int(parsed["sample"]) - int(first_recorded_sample_for_duration)
+                    sample_time_s = sample_span / float(self.sample_rate_hz) if float(self.sample_rate_hz) > 0 else pc_time_s
+                    max_sample_span_seen = max(max_sample_span_seen, sample_span + 1)
+
+                    row = {
+                        "segment_id": self.current_segment_id,
+                        "sample": parsed["sample"],
+                        "time_us": parsed["time_us"],
+                        "sample_time_s": sample_time_s,
+                        "pc_time_s": pc_time_s,
+                        "ch1": parsed["ch1"],
+                        "ch2": parsed["ch2"],
+                        "ch3": parsed["ch3"],
+                        "ch4": parsed["ch4"],
+                        "ch5": parsed["ch5"],
+                        "ch6": parsed["ch6"],
+                    }
+
+                    rows.append(row)
+                    batch.append(row)
+
+                    # Fixed-duration recording stops by device/sample number span,
+                    # not by number of rows received. If samples are missed, the
+                    # session ends at the intended acquisition span and integrity
+                    # reports the missing rows.
+                    if target_sample_count is not None and max_sample_span_seen >= target_sample_count:
+                        self.stop_reason = "DURATION_COMPLETE_SAMPLE_SPAN_LOCKED"
+                        break
 
                 now = time.time()
 
-                if now - last_emit_time >= 0.05:
+                # Emit less frequently to reduce GUI/worker contention during long runs.
+                if batch and now - last_emit_time >= 0.20:
                     self.sample_batch_signal.emit(batch)
                     batch = []
                     last_emit_time = now
+
+                if target_sample_count is not None and max_sample_span_seen >= target_sample_count:
+                    break
 
             if batch:
                 self.sample_batch_signal.emit(batch)
@@ -732,6 +887,7 @@ class RecorderWorker(QThread):
             "segment_id",
             "sample",
             "time_us",
+            "sample_time_s",
             "pc_time_s",
             "ch1",
             "ch2",
@@ -1011,6 +1167,14 @@ class RecorderWorker(QThread):
         total_pc_duration = rows[-1]["pc_time_s"] - rows[0]["pc_time_s"]
         metadata["duration_measured_pc_seconds"] = total_pc_duration
 
+        try:
+            target_fs = float(metadata.get("sample_rate_target_hz", self.sample_rate_hz))
+            metadata["sample_clock_duration_seconds"] = (
+                (int(rows[-1]["sample"]) - int(rows[0]["sample"]) + 1) / target_fs
+            ) if target_fs > 0 else None
+        except Exception:
+            metadata["sample_clock_duration_seconds"] = None
+
         metadata["active_recording_duration_pc_seconds"] = active_pc_duration
         metadata["active_recording_duration_device_seconds"] = active_device_duration
 
@@ -1031,6 +1195,12 @@ class RecorderWorker(QThread):
         else:
             metadata["integrity_status"] = "FAIL"
 
+        metadata["paper_readiness_status"] = "PASS" if metadata["integrity_status"] == "PASS" else "FAIL"
+        metadata["paper_readiness_reason"] = (
+            "No missing samples detected." if metadata["integrity_status"] == "PASS"
+            else f"Missing sample estimate {missing_total}; exclude from HRV paper dataset."
+        )
+
 
 class RecorderPanel(QWidget):
     analyse_recording_requested = pyqtSignal(str)
@@ -1042,8 +1212,28 @@ class RecorderPanel(QWidget):
 
         self.worker = None
 
+        # Protocol dropdown state.
+        # QComboBox visible text is human-friendly display_name.
+        # QComboBox itemData stores stable protocol_name for metadata.
+        self.protocol_lookup = {}
+        self._updating_protocol_box = False
+        self._applying_protocol_config = False
+
         self.preview_rows = []
         self.all_recorded_rows = []
+        self.live_plot_rows = []  # live rolling ECG reset
+        self._plot_first_sample_number = None  # reset for new recording
+        self.last_live_adc_update_time = 0.0
+        self._plot_first_sample_number = None  # sample-clock display reset
+
+        # Paper-grade default: prioritize serial capture over live plot prettiness.
+        self.capture_safe_mode = True
+        self.last_live_adc_update_time = 0.0
+
+        # Live ECG view: short rolling window so the plot stays useful without
+        # making the recorder scan a 5-minute buffer repeatedly.
+        self.live_plot_rows = []
+        self.live_preview_seconds = 8.0
 
         self.preview_seconds = DEFAULT_PREVIEW_SECONDS
         self.timebase_index = TIMEBASE_OPTIONS.index(DEFAULT_PREVIEW_SECONDS)
@@ -1170,21 +1360,20 @@ class RecorderPanel(QWidget):
         self.mode_box = QComboBox()
         self.mode_box.addItems(["ECG"])
         self.mode_box.currentTextChanged.connect(self.update_settings_summary)
+        self.mode_box.currentTextChanged.connect(self.populate_protocol_box)
         row2.addWidget(self.mode_box)
 
         row2.addWidget(QLabel("Protocol"))
         self.protocol_box = QComboBox()
-        self.protocol_box.addItems([
-    "ECG_HEADROOM_60S",
-    "ECG_RESTING_5MIN"
-])
-        self.protocol_box.setMinimumWidth(190)
+        self.protocol_box.setMinimumWidth(240)
         self.protocol_box.setToolTip(
-            "Protocol label saved into metadata and machine evaluation. "
-            "It helps interpret ECG, EMG, EOG, and EEG recordings differently."
+            "Human-readable protocol names are shown here. "
+            "The stable protocol key is saved into metadata."
         )
+        self.protocol_box.currentIndexChanged.connect(self.recorder_protocol_changed)
         self.protocol_box.currentTextChanged.connect(self.update_settings_summary)
         row2.addWidget(self.protocol_box)
+        self.populate_protocol_box()
 
         row2.addWidget(QLabel("Ch"))
         self.channels_box = QComboBox()
@@ -1482,6 +1671,11 @@ class RecorderPanel(QWidget):
         self.stop_btn.setEnabled(False)
         row_buttons.addWidget(self.stop_btn)
 
+        self.reset_recorder_btn = QPushButton("Reset")
+        self.reset_recorder_btn.setToolTip("Recover Recorder after wrong COM port, failed connection, or aborted attempt.")
+        self.reset_recorder_btn.clicked.connect(self.reset_recorder_state)
+        row_buttons.addWidget(self.reset_recorder_btn)
+
         self.keep_btn = QPushButton("✓")
         self.keep_btn.setToolTip("Keep recording")
         self.keep_btn.clicked.connect(self.keep_recording)
@@ -1572,7 +1766,7 @@ class RecorderPanel(QWidget):
         layout.addWidget(bottom_group)
 
         self.plot_timer = QTimer(self)
-        self.plot_timer.setInterval(100)
+        self.plot_timer.setInterval(250)
         self.plot_timer.timeout.connect(self.update_preview_plot)
         self.plot_timer.start()
 
@@ -1588,6 +1782,169 @@ class RecorderPanel(QWidget):
         self.update_settings_summary()
         self.make_buttons_non_focusable()
 
+    def populate_protocol_box(self, preferred_protocol_name=None):
+        # Populate Recorder protocol dropdown from the same registry used by Setup.
+        # Visible text = display_name, e.g. Resting ECG - 5 min.
+        # itemData = stable protocol_name, e.g. ECG_RESTING_5MIN.
+        if not hasattr(self, "protocol_box"):
+            return
+
+        if getattr(self, "_updating_protocol_box", False):
+            return
+
+        self._updating_protocol_box = True
+
+        try:
+            signal_type = "ECG"
+            try:
+                if hasattr(self, "mode_box"):
+                    signal_type = str(self.mode_box.currentText() or "ECG").upper()
+            except Exception:
+                signal_type = "ECG"
+
+            old_protocol = preferred_protocol_name
+
+            if not old_protocol:
+                try:
+                    old_protocol = self.current_protocol_name()
+                except Exception:
+                    old_protocol = None
+
+            summaries = []
+
+            if get_protocols_for_signal is not None:
+                try:
+                    summaries = list(get_protocols_for_signal(signal_type))
+                except Exception:
+                    summaries = []
+
+            if not summaries:
+                summaries = [
+                    {"protocol_name": "ECG_HEADROOM_60S", "display_name": "ECG Headroom Test - 60 s"},
+                    {"protocol_name": "ECG_RESTING_5MIN", "display_name": "Resting ECG - 5 min"},
+                ]
+
+            self.protocol_lookup = {}
+
+            self.protocol_box.blockSignals(True)
+            self.protocol_box.clear()
+
+            for item in summaries:
+                protocol_name = str(item.get("protocol_name", "")).strip()
+                display_name = str(item.get("display_name", protocol_name)).strip()
+
+                if not protocol_name:
+                    continue
+
+                if not display_name:
+                    display_name = protocol_name
+
+                self.protocol_lookup[protocol_name] = item
+                self.protocol_box.addItem(display_name, protocol_name)
+
+            target_index = 0
+
+            if old_protocol:
+                idx = self.find_protocol_index(old_protocol)
+                if idx >= 0:
+                    target_index = idx
+
+            if self.protocol_box.count() > 0:
+                self.protocol_box.setCurrentIndex(target_index)
+
+            self.protocol_box.blockSignals(False)
+
+        finally:
+            try:
+                self.protocol_box.blockSignals(False)
+            except Exception:
+                pass
+
+            self._updating_protocol_box = False
+
+    def find_protocol_index(self, protocol_name):
+        if not hasattr(self, "protocol_box"):
+            return -1
+
+        protocol_name = str(protocol_name or "").strip()
+
+        if not protocol_name:
+            return -1
+
+        for i in range(self.protocol_box.count()):
+            try:
+                if str(self.protocol_box.itemData(i)) == protocol_name:
+                    return i
+                if str(self.protocol_box.itemText(i)) == protocol_name:
+                    return i
+            except Exception:
+                pass
+
+        return -1
+
+    def current_protocol_name(self):
+        if not hasattr(self, "protocol_box"):
+            try:
+                return self.mode_box.currentText()
+            except Exception:
+                return "ECG"
+
+        try:
+            data = self.protocol_box.currentData()
+
+            if data is not None and str(data).strip():
+                return str(data).strip()
+        except Exception:
+            pass
+
+        try:
+            return str(self.protocol_box.currentText()).strip()
+        except Exception:
+            return "ECG"
+
+    def current_protocol_display_name(self):
+        if not hasattr(self, "protocol_box"):
+            return self.current_protocol_name()
+
+        try:
+            txt = str(self.protocol_box.currentText()).strip()
+
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+        return self.current_protocol_name()
+
+    def recorder_protocol_changed(self, index=None):
+        # Apply registry preset when user changes protocol inside Recorder.
+        if getattr(self, "_updating_protocol_box", False):
+            return
+
+        if getattr(self, "_applying_protocol_config", False):
+            return
+
+        try:
+            protocol_name = self.current_protocol_name()
+            signal_type = str(self.mode_box.currentText() or "ECG").upper() if hasattr(self, "mode_box") else "ECG"
+
+            if build_recorder_config is not None:
+                config = build_recorder_config(signal_type, protocol_name)
+                self.apply_protocol_config(config)
+                return
+        except Exception as exc:
+            try:
+                self.log(f"Protocol preset could not be applied: {exc}")
+            except Exception:
+                pass
+
+        try:
+            self.update_recommendation()
+            self.update_settings_summary()
+        except Exception:
+            pass
+
+
     def apply_protocol_config(self, config):
         """
         Apply Setup tab protocol configuration to Recorder.
@@ -1598,6 +1955,8 @@ class RecorderPanel(QWidget):
 
         if config is None:
             return
+
+        self._applying_protocol_config = True  # recorder-protocol-cleanup
 
         signal_type = str(config.get("signal_type", "ECG")).upper()
         protocol_name = str(config.get("protocol_name", signal_type))
@@ -1612,14 +1971,27 @@ class RecorderPanel(QWidget):
 
         try:
             if hasattr(self, "protocol_box"):
-                index = self.protocol_box.findText(protocol_name)
+                display_name = str(
+                    config.get("protocol_display_name", config.get("display_name", protocol_name))
+                )
+
+                self.populate_protocol_box(preferred_protocol_name=protocol_name)
+                index = self.find_protocol_index(protocol_name)
+
+                self.protocol_box.blockSignals(True)
+
                 if index >= 0:
                     self.protocol_box.setCurrentIndex(index)
                 else:
-                    self.protocol_box.addItem(protocol_name)
-                    self.protocol_box.setCurrentText(protocol_name)
+                    self.protocol_box.addItem(display_name, protocol_name)
+                    self.protocol_box.setCurrentIndex(self.protocol_box.count() - 1)
+
+                self.protocol_box.blockSignals(False)
         except Exception:
-            pass
+            try:
+                self.protocol_box.blockSignals(False)
+            except Exception:
+                pass
 
         try:
             channels = str(int(config.get("recommended_channels", 1)))
@@ -1640,17 +2012,16 @@ class RecorderPanel(QWidget):
             pass
 
         try:
-            duration_text = str(config.get("recommended_duration_text", "--:--:--"))
             if hasattr(self, "duration_edit"):
-                if duration_text == "--:--:--":
+                duration_seconds = config.get("recommended_duration_seconds", None)
+                duration_text = str(config.get("recommended_duration_text", "--:--:--.---"))
+
+                if duration_seconds is not None:
+                    self.duration_edit.set_duration_seconds(float(duration_seconds))
+                elif duration_text in ["--:--:--.---", "--:--:--.---", ""]:
                     self.duration_edit.reset()
                 else:
-                    clean = duration_text.replace(":", "")
-                    digits = [ch for ch in clean if ch.isdigit()]
-
-                    if len(digits) == 6:
-                        self.duration_edit.digits = digits
-                        self.duration_edit.update_display()
+                    self.duration_edit.set_duration_text(duration_text)
         except Exception:
             pass
 
@@ -1686,12 +2057,14 @@ class RecorderPanel(QWidget):
             pass
 
         try:
-            self.log("Setup protocol applied:")
+            self.log("Protocol applied:")
             self.log(f"Signal type: {signal_type}")
-            self.log(f"Protocol: {protocol_name}")
+            self.log(f"Protocol: {config.get('protocol_display_name', protocol_name)} ({protocol_name})")
             self.log(f"Suggested placement: {config.get('electrode_placement', '')}")
         except Exception:
             pass
+
+        self._applying_protocol_config = False
 
 
     def apply_theme(self):
@@ -2012,15 +2385,12 @@ class RecorderPanel(QWidget):
         return f"{minutes:02d}:{whole_seconds:02d}.{milliseconds:03d}"
 
     def get_recorded_elapsed_seconds_for_display(self):
-        """
-        Return best current recorded elapsed time for display.
-
-        Priority:
-        1. sample-count based time during active recording
-        2. latest recorded pc_time_s during manual/review mode
-        3. final stored elapsed time
-        """
-
+        # Return best current recorded elapsed time for display.
+        #
+        # Priority:
+        # 1. sample-number/sample-clock duration
+        # 2. final stored elapsed time
+        # 3. pc_time_s fallback only if sample clock is unavailable
         try:
             rows_count = len(self.all_recorded_rows)
         except Exception:
@@ -2032,16 +2402,20 @@ class RecorderPanel(QWidget):
             except Exception:
                 fs = None
 
-            # During recording, sample-count based time is best for analysis-facing display.
-            # For N recorded samples, acquisition duration represented by samples is N/fs.
-            if self.is_recording and fs is not None and fs > 0:
-                return rows_count / fs
+            if fs is not None and fs > 0:
+                try:
+                    first_sample = int(self.all_recorded_rows[0].get("sample"))
+                    last_sample = int(self.all_recorded_rows[-1].get("sample"))
+                    if last_sample >= first_sample:
+                        return (last_sample - first_sample + 1) / fs
+                except Exception:
+                    pass
 
-            # During review, use the final sample-count duration if possible.
-            if (self.review_mode or self.saved_review_visible) and fs is not None and fs > 0:
-                return rows_count / fs
+                try:
+                    return rows_count / fs
+                except Exception:
+                    pass
 
-            # Fallback: latest recorded PC-relative sample time.
             try:
                 return float(self.all_recorded_rows[-1].get("pc_time_s", 0.0))
             except Exception:
@@ -2239,26 +2613,43 @@ class RecorderPanel(QWidget):
         self.clamp_review_window()
         self.update_preview_plot()
 
-    def clamp_review_window(self):
-        total_duration = self.get_recorded_duration()
+    def clamp_review_window(self, x_min=None):
+        # Clamp review-window start and return the clamped value.
+        # Backward compatible:
+        #   self.clamp_review_window()
+        #   self.clamp_review_window(value)
+        try:
+            total_duration = float(self.get_recorded_duration())
+        except Exception:
+            total_duration = 0.0
+
+        try:
+            preview_seconds = float(self.preview_seconds)
+        except Exception:
+            preview_seconds = 60.0
+
+        if x_min is None:
+            try:
+                value = float(getattr(self, "review_x_min", 0.0))
+            except Exception:
+                value = 0.0
+        else:
+            try:
+                value = float(x_min)
+            except Exception:
+                value = 0.0
 
         if total_duration <= 0:
-            self.review_x_min = 0
-            return
+            clamped = max(0.0, value)
+        else:
+            max_start = max(0.0, total_duration - preview_seconds)
+            clamped = max(0.0, min(value, max_start))
 
-        max_start = max(0, total_duration - self.preview_seconds)
-
-        if self.review_x_min < 0:
-            self.review_x_min = 0
-
-        if self.review_x_min > max_start:
-            self.review_x_min = max_start
+        self.review_x_min = clamped
+        return clamped
 
     def get_recorded_duration(self):
-        if len(self.all_recorded_rows) == 0:
-            return 0
-
-        return float(self.all_recorded_rows[-1]["pc_time_s"])
+        return self.recorded_duration_sample_clock_s()
 
     def get_target_plot_keys(self):
         target = self.amp_target_box.currentText()
@@ -2552,10 +2943,169 @@ class RecorderPanel(QWidget):
     def receive_sample_batch(self, batch):
         self.all_recorded_rows.extend(batch)
 
+        # Keep a short rolling live buffer. This is the only buffer used for
+        # active live ECG drawing. The full recording remains in all_recorded_rows
+        # and is what gets written to raw.csv.
+        try:
+            if not hasattr(self, "live_plot_rows"):
+                self.live_plot_rows = []
+
+            self.live_plot_rows.extend(batch)
+
+            try:
+                fs = float(self.rate_box.currentText())
+            except Exception:
+                fs = 500.0
+
+            try:
+                live_seconds = float(getattr(self, "live_preview_seconds", 8.0))
+            except Exception:
+                live_seconds = 8.0
+
+            max_live_rows = int((live_seconds + 2.0) * fs) + 1000
+
+            if max_live_rows < 1500:
+                max_live_rows = 1500
+
+            if len(self.live_plot_rows) > max_live_rows:
+                self.live_plot_rows = self.live_plot_rows[-max_live_rows:]
+        except Exception:
+            pass
+
+        # During recording, avoid full review analysis. Still update ADC headroom
+        # approximately once per second from recent original raw values.
+        if self.is_recording and not (self.review_mode or self.saved_review_visible):
+            try:
+                now = time.time()
+                if now - float(getattr(self, "last_live_adc_update_time", 0.0)) >= 1.0:
+                    recent = self.live_plot_rows[-1000:] if hasattr(self, "live_plot_rows") else self.all_recorded_rows[-1000:]
+                    values = [row.get("ch1") for row in recent if row.get("ch1") is not None]
+                    if values:
+                        self.update_live_adc_headroom_status(values)
+                    self.last_live_adc_update_time = now
+            except Exception:
+                pass
+
+            return
+
         if self.review_mode or self.saved_review_visible:
             return
 
         return
+
+    def row_sample_clock_time_s(self, row, fs=None):
+        # Physiology display time for ECG.
+        # Preferred: sample_time_s written by RecorderWorker.
+        # Fallback: sample number relative to first row divided by target fs.
+        # Last resort: pc_time_s.
+        # pc_time_s is transport/receive timing and can stretch/compress during
+        # serial backlog. It should not be the default ECG physiology axis.
+        try:
+            if row.get("sample_time_s") is not None:
+                return float(row.get("sample_time_s"))
+        except Exception:
+            pass
+
+        try:
+            if fs is None:
+                fs = int(self.rate_box.currentText())
+            fs = float(fs)
+            if fs > 0 and row.get("sample") is not None:
+                first = getattr(self, "_plot_first_sample_number", None)
+                if first is None:
+                    source_rows = self.preview_rows if (self.review_mode or self.saved_review_visible) else self.all_recorded_rows
+                    if source_rows:
+                        first = int(source_rows[0].get("sample", 0))
+                    else:
+                        first = int(row.get("sample", 0))
+                    self._plot_first_sample_number = first
+                return (int(row.get("sample")) - int(first)) / fs
+        except Exception:
+            pass
+
+        try:
+            return float(row.get("pc_time_s", 0.0))
+        except Exception:
+            return 0.0
+
+    def recorded_duration_sample_clock_s(self):
+        if (self.review_mode or self.saved_review_visible) and getattr(self, "preview_rows", None):
+            rows = self.preview_rows
+        else:
+            rows = self.all_recorded_rows
+
+        if not rows:
+            return 0.0
+
+        try:
+            fs = float(self.rate_box.currentText())
+        except Exception:
+            fs = 500.0
+
+        try:
+            first = int(rows[0].get("sample"))
+            last = int(rows[-1].get("sample"))
+            if fs > 0 and last >= first:
+                return (last - first + 1) / fs
+        except Exception:
+            pass
+
+        try:
+            return float(rows[-1].get("sample_time_s", rows[-1].get("pc_time_s", 0.0)))
+        except Exception:
+            return 0.0
+
+    def gap_aware_xy(self, rows, ch_name, x_min, x_max, fs):
+        # Build x/y arrays with NaN breaks when sample numbers or segment IDs jump.
+        # This prevents false straight-line bridges across missing samples.
+        x = []
+        y = []
+        raw_for_adc = []
+
+        prev_sample = None
+        prev_segment = None
+
+        for row in rows:
+            value = row.get(ch_name)
+
+            if value is None:
+                continue
+
+            try:
+                sample = int(row.get("sample"))
+            except Exception:
+                sample = None
+
+            try:
+                segment = int(row.get("segment_id", 1))
+            except Exception:
+                segment = 1
+
+            row_t = self.row_sample_clock_time_s(row, fs)
+
+            if row_t < x_min:
+                prev_sample = sample
+                prev_segment = segment
+                continue
+
+            if row_t > x_max:
+                break
+
+            if prev_sample is not None and sample is not None:
+                if segment != prev_segment or sample - prev_sample > 1:
+                    if x:
+                        x.append(float("nan"))
+                        y.append(float("nan"))
+
+            x.append(float(row_t))
+            y.append(value)
+            raw_for_adc.append(value)
+
+            prev_sample = sample
+            prev_segment = segment
+
+        return x, y, raw_for_adc
+
 
     def format_time_mmss_ms(self, seconds):
         """
@@ -2928,28 +3478,88 @@ class RecorderPanel(QWidget):
                 self.log("Could not update metadata.json with markers:")
                 self.log(str(e))
 
-    def get_rows_for_current_view(self):
-        rows = self.all_recorded_rows
+    def rows_near_sample_clock_window(self, rows, x_min, x_max, fs, margin_s=1.0):
+        # Return only rows near the visible sample-clock window.
+        # During live recording this prevents repeated 100k+ row plotting work.
+        if not rows:
+            return rows
 
-        if len(rows) == 0:
-            return [], 0, self.preview_seconds
+        try:
+            fs = float(fs)
+        except Exception:
+            fs = 500.0
+
+        if fs <= 0:
+            fs = 500.0
+
+        try:
+            max_rows = int((float(self.preview_seconds) + 2.0 * float(margin_s)) * fs) + 2000
+        except Exception:
+            max_rows = int(62 * fs) + 2000
+
+        if max_rows < 1000:
+            max_rows = 1000
+
+        try:
+            duration = self.recorded_duration_sample_clock_s()
+            if x_max >= duration - 0.5:
+                return rows[-max_rows:]
+        except Exception:
+            pass
+
+        lo = float(x_min) - float(margin_s)
+        hi = float(x_max) + float(margin_s)
+        out = []
+
+        for row in rows:
+            try:
+                t = self.row_sample_clock_time_s(row, fs)
+            except Exception:
+                continue
+
+            if t < lo:
+                continue
+
+            if t > hi:
+                if out:
+                    break
+                continue
+
+            out.append(row)
+
+        return out
+
+
+    def get_rows_for_current_view(self):
+        try:
+            fs = int(self.rate_box.currentText())
+        except Exception:
+            fs = 500
 
         if self.review_mode or self.saved_review_visible:
-            x_min = self.review_x_min
-            x_max = self.review_x_min + self.preview_seconds
+            rows = self.preview_rows if getattr(self, "preview_rows", None) else self.all_recorded_rows
+            duration = self.get_recorded_duration()
+
+            if duration <= 0:
+                return [], 0, self.preview_seconds
+
+            x_min = self.clamp_review_window(self.review_x_min)
+            x_max = min(duration, x_min + self.preview_seconds)
+
+            rows = self.rows_near_sample_clock_window(rows, x_min, x_max, fs, margin_s=1.0)
+
             return rows, x_min, x_max
 
-        latest_time = rows[-1]["pc_time_s"]
+        rows = self.all_recorded_rows
 
-        trigger_fraction = 0.80
-        trigger_time = self.preview_seconds * trigger_fraction
+        if not rows:
+            return [], 0, self.preview_seconds
 
-        if latest_time <= trigger_time:
-            x_min = 0
-            x_max = self.preview_seconds
-        else:
-            x_min = latest_time - trigger_time
-            x_max = x_min + self.preview_seconds
+        duration = self.recorded_duration_sample_clock_s()
+        x_max = max(self.preview_seconds, duration)
+        x_min = max(0, x_max - self.preview_seconds)
+
+        rows = self.rows_near_sample_clock_window(rows, x_min, x_max, fs, margin_s=1.0)
 
         return rows, x_min, x_max
 
@@ -3100,7 +3710,41 @@ class RecorderPanel(QWidget):
         label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     def update_preview_plot(self):
-        rows, x_min, x_max = self.get_rows_for_current_view()
+        active_live_recording = (
+            self.is_recording
+            and getattr(self, "capture_safe_mode", True)
+            and not (self.review_mode or self.saved_review_visible)
+        )
+
+        if active_live_recording:
+            rows = getattr(self, "live_plot_rows", [])
+
+            if len(rows) == 0:
+                self.update_scrub_controls(0, getattr(self, "live_preview_seconds", 8.0))
+                return
+
+            try:
+                fs = int(self.rate_box.currentText())
+            except Exception:
+                fs = 500
+
+            try:
+                live_seconds = float(getattr(self, "live_preview_seconds", 8.0))
+            except Exception:
+                live_seconds = 8.0
+
+            try:
+                x_last = self.row_sample_clock_time_s(rows[-1], fs)
+            except Exception:
+                x_last = len(rows) / float(fs)
+
+            x_max = max(live_seconds, float(x_last))
+            x_min = max(0.0, x_max - live_seconds)
+
+            rows = self.rows_near_sample_clock_window(rows, x_min, x_max, fs, margin_s=0.25)
+
+        else:
+            rows, x_min, x_max = self.get_rows_for_current_view()
 
         if len(rows) == 0:
             self.update_empty_plot_ranges()
@@ -3119,38 +3763,18 @@ class RecorderPanel(QWidget):
         for i in range(1, channels + 1):
             ch_name = f"ch{i}"
 
-            x = []
-            y_raw = []
-
-            for row in rows:
-                value = row.get(ch_name)
-
-                if value is None:
-                    continue
-
-                if row["pc_time_s"] < x_min:
-                    continue
-
-                if row["pc_time_s"] > x_max:
-                    continue
-
-                x.append(row["pc_time_s"])
-                y_raw.append(value)
+            x, y_raw, raw_for_adc = self.gap_aware_xy(rows, ch_name, x_min, x_max, fs)
 
             if len(x) == 0:
                 continue
 
-            # Raw monitor displays original raw ADC values unless display inversion is enabled.
-            # Inversion is baseline-centered, not zero-centered. raw.csv remains unchanged.
             if invert_display:
                 y_display = self.baseline_centered_invert_for_display(y_raw)
             else:
                 y_display = np.asarray(y_raw, dtype=float)
 
-            # Live ADC status must always use original raw ADC values.
-            # Do this for ch1 only to avoid status flicker in multi-channel mode.
             if i == 1:
-                self.update_live_adc_headroom_status(y_raw)
+                self.update_live_adc_headroom_status(raw_for_adc)
 
             raw_key = f"{ch_name}_raw"
 
@@ -3168,8 +3792,6 @@ class RecorderPanel(QWidget):
             filtered_key = f"{ch_name}_filtered"
 
             if filtered_key in self.preview_curves:
-                # Filter is calculated from the original raw ADC values.
-                # Inversion is applied only after filtering, for display.
                 y_filtered = self.filter_review_signal(y_raw, fs)
 
                 if invert_display:
@@ -3185,13 +3807,11 @@ class RecorderPanel(QWidget):
                 if y_range is not None:
                     plot.setYRange(y_range[0], y_range[1], padding=0)
 
-        self.update_all_selection_regions()
-        self.update_marker_lines()
-        self.update_scrub_controls(x_min, x_max)
+        if not active_live_recording:
+            self.update_all_selection_regions()
+            self.update_marker_lines()
 
-    # ========================================================
-    # SELECTION + EDGE AUTOSCROLL
-    # ========================================================
+        self.update_scrub_controls(x_min, x_max)
 
     def clear_active_selection(self):
         """
@@ -3484,14 +4104,22 @@ class RecorderPanel(QWidget):
         else:
             return None
 
+        try:
+            fs = int(self.rate_box.currentText())
+        except Exception:
+            fs = 500
+
         x = []
         y = []
 
         for row in self.all_recorded_rows:
-            t = float(row["pc_time_s"])
+            t = float(self.row_sample_clock_time_s(row, fs))
 
-            if t < x1 or t > x2:
+            if t < x1:
                 continue
+
+            if t > x2:
+                break
 
             value = row.get(channel_name)
 
@@ -3506,11 +4134,6 @@ class RecorderPanel(QWidget):
 
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
-
-        try:
-            fs = int(self.rate_box.currentText())
-        except Exception:
-            fs = 500
 
         if use_filter:
             y = self.filter_review_signal(y, fs)
@@ -3593,7 +4216,220 @@ class RecorderPanel(QWidget):
             self.set_mode_label("Mode: Recording")
             self.log("Resume requested.")
 
+    def set_recorder_idle_controls(self, message=None):
+        # Single place for button state after reset/error/discard/idle.
+        try:
+            self.play_btn.setEnabled(True)
+            self.play_btn.setText("▶")
+            self.play_btn.setToolTip("Start recording")
+            self.stop_btn.setEnabled(False)
+
+            if hasattr(self, "reset_recorder_btn"):
+                self.reset_recorder_btn.setEnabled(True)
+
+            self.keep_btn.setEnabled(False)
+            self.discard_btn.setEnabled(False)
+
+            if hasattr(self, "analyse_recording_btn"):
+                self.analyse_recording_btn.setEnabled(False)
+
+            if hasattr(self, "apply_review_filter_btn"):
+                self.apply_review_filter_btn.setEnabled(False)
+        except Exception:
+            pass
+
+        try:
+            self.set_mode_label(message or "Mode: Idle")
+        except Exception:
+            pass
+
+    def clear_recorder_buffers_and_plots(self):
+        # Clear all unsaved/live/review buffers and curves.
+        self.preview_rows = []
+        self.all_recorded_rows = []
+        self.live_plot_rows = []
+        self._plot_first_sample_number = None
+
+        self.review_mode = False
+        self.saved_review_visible = False
+        self.review_session_folder = None
+        self.review_x_min = 0
+
+        self.recording_start_wall_time = None
+        self.recording_elapsed_final = 0
+
+        self.y_ranges = {}
+        self.selection_regions = {}
+        self.active_selection = None
+
+        try:
+            self.markers = []
+            self.clear_marker_lines()
+        except Exception:
+            pass
+
+        try:
+            for curve in self.preview_curves.values():
+                curve.setData([], [])
+        except Exception:
+            pass
+
+        try:
+            self.update_empty_plot_ranges()
+        except Exception:
+            pass
+
+        try:
+            self.update_scrub_controls(0, self.preview_seconds)
+        except Exception:
+            pass
+
+        try:
+            self.elapsed_label.setText("Elapsed: 00:00.000")
+        except Exception:
+            pass
+
+        try:
+            self.adc_status_label.setText("ADC: --")
+            self.adc_status_label.setStyleSheet("")
+        except Exception:
+            pass
+
+        try:
+            self.selection_box.setText(
+                "Selection Analysis: Available after recording is stopped."
+            )
+        except Exception:
+            pass
+
+        try:
+            self.integrity_box.setText("Integrity Summary: Recorder reset. Ready.")
+        except Exception:
+            pass
+
+    def hard_release_worker(self, wait_ms=2000):
+        # Return True if no worker remains running.
+        worker = getattr(self, "worker", None)
+
+        if worker is None:
+            return True
+
+        try:
+            if hasattr(worker, "request_stop"):
+                worker.request_stop()
+        except Exception:
+            pass
+
+        try:
+            if worker.isRunning():
+                worker.wait(int(wait_ms))
+        except Exception:
+            pass
+
+        try:
+            if worker.isRunning():
+                try:
+                    self.log("Recorder reset: worker still running; terminating as last resort.")
+                except Exception:
+                    pass
+                worker.terminate()
+                worker.wait(1000)
+        except Exception:
+            pass
+
+        try:
+            still_running = bool(worker.isRunning())
+        except Exception:
+            still_running = False
+
+        if not still_running:
+            self.worker = None
+            return True
+
+        return False
+
+
+    def reset_recorder_state(self):
+        # Deterministic recovery after wrong COM port, failed connection, abort,
+        # or stale preview state. It does not delete saved recording folders.
+        try:
+            self.stop_edge_scroll_selection()
+        except Exception:
+            pass
+
+        released = True
+
+        try:
+            released = self.hard_release_worker(wait_ms=2000)
+        except Exception as exc:
+            released = False
+            try:
+                self.log(f"Recorder reset warning: {exc}")
+            except Exception:
+                pass
+
+        self.worker = None
+        self.is_recording = False
+        self.is_paused = False
+
+        self.clear_recorder_buffers_and_plots()
+        self.set_recorder_idle_controls("Mode: Idle")
+
+        try:
+            self.update_recommendation()
+            self.update_settings_summary()
+        except Exception:
+            pass
+
+        try:
+            self.refresh_ports()
+        except Exception:
+            pass
+
+        try:
+            if released:
+                self.log("Recorder reset complete. Select the correct COM port and press Play.")
+            else:
+                self.log("Recorder reset attempted, but worker may still be busy. Wait a few seconds and press Reset once.")
+        except Exception:
+            pass
+
+    def prepare_new_recording_state(self):
+        # Called at the beginning of Play. Prevents stale buffers from affecting
+        # the next recording.
+        try:
+            self.stop_edge_scroll_selection()
+        except Exception:
+            pass
+
+        try:
+            if self.worker is not None:
+                if hasattr(self.worker, "isRunning") and self.worker.isRunning():
+                    if self.is_recording:
+                        return False
+                    self.hard_release_worker(wait_ms=1500)
+                else:
+                    self.worker = None
+        except Exception:
+            self.worker = None
+
+        self.is_recording = False
+        self.is_paused = False
+        self.clear_recorder_buffers_and_plots()
+
+        try:
+            self.live_plot_rows = []
+            self.last_live_adc_update_time = 0.0
+        except Exception:
+            pass
+
+        return True
+
+
     def start_recording(self):
+        if not self.prepare_new_recording_state():  # recorder-reset-state-machine
+            return
+
         port = self.port_box.currentData()
 
         if not port:
@@ -3633,7 +4469,10 @@ class RecorderPanel(QWidget):
         self.set_mode_label("Mode: Recording")
 
         self.selection_box.setText("Selection Analysis: Available after recording is stopped.")
-        self.integrity_box.setText("Integrity Summary: Recording in progress...")
+        self.integrity_box.setText(
+            "Integrity Summary: Recording in progress...\n"
+            "Live rolling ECG active: short window only; full review rebuilds after recording."
+        )
 
         self.apply_review_filter_btn.setEnabled(False)
 
@@ -3648,9 +4487,11 @@ class RecorderPanel(QWidget):
         mode = self.mode_box.currentText()
 
         if hasattr(self, "protocol_box"):
-            protocol_name = self.protocol_box.currentText()
+            protocol_name = self.current_protocol_name()
+            protocol_display_name = self.current_protocol_display_name()
         else:
             protocol_name = mode
+            protocol_display_name = mode
 
         device_id = self.device_id_edit.text().strip()
         operator = self.operator_edit.text().strip()
@@ -3665,12 +4506,13 @@ class RecorderPanel(QWidget):
         self.discard_btn.setEnabled(False)
 
         self.log("Starting recording with settings:")
+        self.log("Live rolling ECG active: short-window plotting protects capture; full review appears after recording.")
         self.log(f"Port: {port}")
         self.log(f"Baud: {baud}")
         self.log(f"Channels: {channels}")
         self.log(f"Rate: {rate} Hz")
         self.log(f"Mode: {mode}")
-        self.log(f"Protocol: {protocol_name}")
+        self.log(f"Protocol: {protocol_display_name} ({protocol_name})")
 
         if duration_seconds is None:
             self.log("Duration: manual stop mode")
@@ -3713,6 +4555,14 @@ class RecorderPanel(QWidget):
 
         self.stop_btn.setEnabled(False)
         self.play_btn.setEnabled(False)
+        self.set_mode_label("Mode: Stopping...")  # recorder-reset-state-machine
+
+        # recorder-reset-stop-reset-available
+        try:
+            if hasattr(self, "reset_recorder_btn"):
+                self.reset_recorder_btn.setEnabled(True)
+        except Exception:
+            pass
 
     def show_integrity_summary(self, metadata):
         status = metadata.get("integrity_status", "UNKNOWN")
@@ -3727,6 +4577,9 @@ class RecorderPanel(QWidget):
         measured_duration = metadata.get("duration_measured_pc_seconds")
         segments = metadata.get("segments_recorded")
         pause_used = metadata.get("pause_resume_used")
+        sample_clock_duration = metadata.get("sample_clock_duration_seconds")
+        paper_ready = metadata.get("paper_readiness_status", "UNKNOWN")
+        paper_reason = metadata.get("paper_readiness_reason", "")
 
         text = (
             f"Integrity Summary\n"
@@ -3734,7 +4587,8 @@ class RecorderPanel(QWidget):
             f"Duration mode: {duration_mode}\n"
             f"Requested duration: {requested_text}\n"
             f"Stop reason: {stop_reason}\n"
-            f"Measured duration: {measured_duration}\n"
+            f"Measured PC duration: {measured_duration}\n"
+            f"Sample-clock duration: {sample_clock_duration}\n"
             f"Target sample rate: {target} Hz\n"
             f"Samples recorded: {samples}\n"
             f"Segments: {segments}\n"
@@ -3742,6 +4596,8 @@ class RecorderPanel(QWidget):
             f"Missing sample estimate: {missing}\n"
             f"Measured device-time sample rate: {rate_device}\n"
             f"Measured PC-time sample rate: {rate_pc}\n"
+            f"Paper readiness: {paper_ready}\n"
+            f"Reason: {paper_reason}\n"
         )
 
         self.integrity_box.setText(text)
@@ -3759,6 +4615,7 @@ class RecorderPanel(QWidget):
     def recording_finished_handler(self, session_folder):
         self.is_recording = False
         self.is_paused = False
+        self.worker = None  # recorder-reset-cleanup normal finish
 
         self.play_btn.setEnabled(True)
         self.play_btn.setText("▶")
@@ -3771,7 +4628,7 @@ class RecorderPanel(QWidget):
         self.review_x_min = 0
 
         if len(self.all_recorded_rows) > 0:
-            self.recording_elapsed_final = float(self.all_recorded_rows[-1]["pc_time_s"])
+            self.recording_elapsed_final = self.recorded_duration_sample_clock_s()
         else:
             self.recording_elapsed_final = 0
 
@@ -4254,6 +5111,7 @@ class RecorderPanel(QWidget):
 
         self.is_recording = False
         self.is_paused = False
+        self.worker = None  # recorder-reset-cleanup error
 
         self.play_btn.setEnabled(True)
         self.play_btn.setText("▶")
@@ -4281,4 +5139,9 @@ class RecorderPanel(QWidget):
         color = "#aa0000" if self.is_light_theme else "#ff8080"
         self.integrity_box.setStyleSheet(f"background-color: {bg}; color: {color};")
 
-        self.set_mode_label("Mode: Error")
+        self.set_recorder_idle_controls("Mode: Error")  # recorder-reset-state-machine
+
+        try:
+            self.refresh_ports()  # recorder-reset-cleanup error
+        except Exception:
+            pass

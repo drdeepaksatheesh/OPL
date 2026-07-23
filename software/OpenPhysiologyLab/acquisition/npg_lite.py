@@ -9,7 +9,7 @@ class NPGLite:
         self.transport = SerialTransport(
             port=port,
             baudrate=baudrate,
-            timeout=1
+            timeout=0.05
         )
 
     def connect(self):

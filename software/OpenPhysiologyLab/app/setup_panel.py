@@ -63,7 +63,7 @@ class SetupPanel(QWidget):
         mission.setWordWrap(True)
         title_col.addWidget(mission)
 
-        helper = QLabel("Choose your experiment setup.")
+        helper = QLabel("Start with ECG acquisition, then move through calipers, RR intervals, NN decisions, and visual HRV.")
         helper.setObjectName("heroHelper")
         helper.setWordWrap(True)
         title_col.addWidget(helper)
@@ -76,7 +76,7 @@ class SetupPanel(QWidget):
         # Protocol selector card
         # ------------------------------------------------------------
 
-        group = QGroupBox("Choose Experiment Setup")
+        group = QGroupBox("ECG → HRV workflow setup")
         row = QHBoxLayout()
         row.setContentsMargins(10, 14, 10, 10)
         row.setSpacing(10)
@@ -97,7 +97,7 @@ class SetupPanel(QWidget):
         self.protocol_box.setMinimumWidth(340)
         row.addWidget(self.protocol_box, stretch=1)
 
-        self.use_btn = QPushButton("Use This Setup → Recorder")
+        self.use_btn = QPushButton("Use ECG setup → Recorder")
         self.use_btn.setObjectName("primaryButton")
         self.use_btn.clicked.connect(self.use_setup_clicked)
         row.addWidget(self.use_btn)
@@ -557,142 +557,59 @@ class SetupPanel(QWidget):
     def connection_guide_html(self, signal_type):
         signal_type = str(signal_type).upper()
 
-        if signal_type == "ECG":
+        if signal_type != "ECG":
             return """
-            <div class='section'>Electrode placement</div>
+            <div class='section'>First public workflow</div>
             <div class='note'>
-                Lead-II limb placement with <b>NPG Lite practical polarity configuration</b>.
-                Use fresh gel electrodes and secure the wires to avoid cable tug.
+                This build is being cleaned for the ECG → HRV teaching pathway first.
+                Other biosignals can be brought back after this path is stable.
             </div>
-
-            <table class='connection-table'>
-                <tr>
-                    <th>Body electrode</th>
-                    <th></th>
-                    <th>NPG Lite input</th>
-                </tr>
-                <tr>
-                    <td class='body-point'>Right wrist / RA</td>
-                    <td class='arrow'>→</td>
-                    <td class='npg-pin'>A0P / CH input P</td>
-                </tr>
-                <tr>
-                    <td class='body-point'>Left leg / LL</td>
-                    <td class='arrow'>→</td>
-                    <td class='npg-pin'>A0N / CH input N</td>
-                </tr>
-                <tr>
-                    <td class='body-point'>Right leg / RL</td>
-                    <td class='arrow'>→</td>
-                    <td class='npg-pin'>REF / GND</td>
-                </tr>
-            </table>
-
-            <div class='hint-box'>
-                <b>Expected result:</b> upright Lead-II-like ECG with positive R peaks and better ADC headroom
-                in the current NPG Lite + OpenPhysiologyLab firmware/app chain.
-            </div>
-
-            <div class='warning-box'>
-                <b>Important:</b> textbook Lead II polarity is LL positive and RA negative.
-                However, local NPG Lite polarity testing showed that A0P→RA and A0N→LL produced
-                upright ECG without clipping, while the opposite mapping produced inverted ECG with
-                low-rail clipping. Document the exact pin mapping in metadata.
-            </div>
-            """
-
-        if signal_type == "EMG":
-            return """
-            <div class='section'>Electrode placement</div>
-            <div class='note'>
-                Surface EMG:
-                <br>• Two measuring electrodes along muscle fibres
-                <br>• Place over muscle belly
-                <br>• Reference/Ground over nearby bony or electrically quiet area
-            </div>
-
-            <div class='section'>NPG Lite connection</div>
-            <pre class='diagram'>
-MUSCLE                         NPG LITE INPUT
-────────────────────────────────────────────
-Electrode 1        ───────────  CH input +
-Electrode 2        ───────────  CH input -
-Reference          ───────────  REF / GND
-
-Start with mild/moderate contraction.
-Strong contraction may clip on high-gain systems.
-            </pre>
-            """
-
-        if signal_type == "EOG":
-            return """
-            <div class='section'>Electrode placement</div>
-            <div class='note'>
-                Horizontal EOG:
-                <br>• One electrode near left outer canthus
-                <br>• One electrode near right outer canthus
-                <br>• Reference/Ground on forehead or mastoid
-            </div>
-
-            <div class='section'>NPG Lite connection</div>
-            <pre class='diagram'>
-EYE ELECTRODES                 NPG LITE INPUT
-────────────────────────────────────────────
-Left canthus       ───────────  CH input -
-Right canthus      ───────────  CH input +
-Forehead/mastoid   ───────────  REF / GND
-
-Use left-centre-right gaze and blink tasks.
-Watch baseline drift and saturation.
-            </pre>
-            """
-
-        if signal_type == "EEG":
-            return """
-            <div class='section'>Electrode placement</div>
-            <div class='note'>
-                Simple EEG alpha protocol:
-                <br>• Active electrode: occipital scalp if possible
-                <br>• Reference: mastoid / ear region
-                <br>• Ground: forehead
-            </div>
-
-            <div class='section'>NPG Lite connection</div>
-            <pre class='diagram'>
-SCALP ELECTRODES               NPG LITE INPUT
-────────────────────────────────────────────
-Occipital active   ───────────  CH input +
-Reference          ───────────  CH input -
-Ground             ───────────  REF / GND
-
-Use eyes-open / eyes-closed blocks.
-EEG needs noise and artifact checks, not just ADC headroom.
-            </pre>
             """
 
         return """
-        <div class='section'>Generic connection</div>
-        <pre class='diagram'>
-SIGNAL SOURCE                  NPG LITE INPUT
-────────────────────────────────────────────
-Input +            ───────────  CH input +
-Input -            ───────────  CH input -
-Reference          ───────────  REF / GND
-        </pre>
+        <div class='section'>Electrode placement</div>
+        <div class='note'>
+            Lead-II-like limb-axis ECG for education and exploratory physiology work.
+            Use fresh gel electrodes, reduce cable tug, and record the exact pin mapping.
+        </div>
+
+        <table class='connection-table'>
+            <tr>
+                <th>Body electrode</th>
+                <th></th>
+                <th>NPG Lite input</th>
+            </tr>
+            <tr>
+                <td class='body-point'>Right wrist / RA</td>
+                <td class='arrow'>→</td>
+                <td class='npg-pin'>A0P / CH input P</td>
+            </tr>
+            <tr>
+                <td class='body-point'>Left leg / LL</td>
+                <td class='arrow'>→</td>
+                <td class='npg-pin'>A0N / CH input N</td>
+            </tr>
+            <tr>
+                <td class='body-point'>Right leg / RL</td>
+                <td class='arrow'>→</td>
+                <td class='npg-pin'>REF / GND</td>
+            </tr>
+        </table>
+
+        <div class='hint-box'>
+            <b>Expected recording:</b> upright, Lead-II-like ECG with visible R peaks and enough
+            ADC headroom for RR/NN interval teaching.
+        </div>
+
+        <div class='warning-box'>
+            <b>Scope:</b> This is not a certified diagnostic Lead II. It is the current OPL/NPG Lite
+            practical polarity configuration for teaching ECG timing and HRV workflow development.
+        </div>
         """
 
     def format_config_summary(self, config):
         filt = config.get("filter", {}) or {}
-        focus = config.get("evaluation_focus", []) or []
         signal_type = config.get("signal_type")
-
-        focus_html = ""
-
-        if focus:
-            focus_html = "".join([f"<div class='bullet'>• {item}</div>" for item in focus])
-        else:
-            focus_html = "<div class='bullet'>• Generic ADC headroom check</div>"
-
         guide_html = self.connection_guide_html(signal_type)
 
         html = f"""
@@ -702,31 +619,33 @@ Reference          ───────────  REF / GND
             <table width="100%">
                 <tr>
                     <td width="42%" valign="top">
-                        <div class="title">Protocol at a glance</div>
+                        <div class="title">ECG acquisition setup</div>
 
                         <table>
-                            <tr><td class="label">Signal type</td><td class="value">{config.get('signal_type')}</td></tr>
-                            <tr><td class="label">Protocol</td><td class="value">{config.get('protocol_name')}</td></tr>
-                            <tr><td class="label">Display name</td><td class="value">{config.get('protocol_display_name')}</td></tr>
-                        </table>
-
-                        <div class="section">Recorder preset</div>
-                        <table>
+                            <tr><td class="label">Signal</td><td class="value">{config.get('signal_type')}</td></tr>
+                            <tr><td class="label">Protocol</td><td class="value">{config.get('protocol_display_name')}</td></tr>
                             <tr><td class="label">Channels</td><td class="value">{config.get('recommended_channels')}</td></tr>
                             <tr><td class="label">Sample rate</td><td class="value">{config.get('recommended_sample_rate_hz')} Hz</td></tr>
                             <tr><td class="label">Duration</td><td class="value">{config.get('recommended_duration_text')}</td></tr>
-                            <tr><td class="label">Placement</td><td class="value">{config.get('electrode_placement')}</td></tr>
                         </table>
 
-                        <div class="section">Filter preset</div>
+                        <div class="section">Recorder preset</div>
+                        <div class="bullet">• Save raw CSV with a usable time column when available.</div>
+                        <div class="bullet">• Keep channel naming consistent, preferably ch1 for the first ECG path.</div>
+                        <div class="bullet">• Document subject/session/posture/electrode placement before recording.</div>
+
+                        <div class="section">Review filter</div>
                         <table>
                             <tr><td class="label">Low cut</td><td class="value">{filt.get('low_hz')} Hz</td></tr>
                             <tr><td class="label">High cut</td><td class="value">{filt.get('high_hz')} Hz</td></tr>
                             <tr><td class="label">50 Hz notch</td><td class="value">{filt.get('notch_50hz')}</td></tr>
                         </table>
 
-                        <div class="section">Machine evaluation</div>
-                        {focus_html}
+                        <div class="section">After recording</div>
+                        <div class="bullet">• ECG Calipers checks the waveform and R-reference beats.</div>
+                        <div class="bullet">• RR Pairs and RR Triplets teach interval-to-interval change.</div>
+                        <div class="bullet">• RR / NN Table decides accepted NN intervals.</div>
+                        <div class="bullet">• Visual HRV shows where each number comes from.</div>
                     </td>
 
                     <td width="58%" valign="top">
@@ -740,85 +659,36 @@ Reference          ───────────  REF / GND
 
         return html
 
-
     def format_logic_summary(self, config):
-        signal = config.get("signal_type")
         notes = config.get("protocol_notes", "")
-
-        if signal == "ECG":
-            main_text = """
-            <div class='note'>
-                ECG is the first validation layer because it is rhythmic, large, and easy to verify.
-            </div>
-
-            <div class='section-d'>This protocol checks</div>
-            <div class='bullet'>• ADC headroom</div>
-            <div class='bullet'>• clipping near R waves</div>
-            <div class='bullet'>• R-peak timing</div>
-            <div class='bullet'>• HRV readiness</div>
-
-            <div class='section-c'>Interpretation</div>
-            <div class='bullet'>• RR timing may remain usable despite mild R-wave clipping.</div>
-            <div class='bullet'>• ECG morphology/amplitude is cautious if raw R peaks clip.</div>
-            """
-        elif signal == "EMG":
-            main_text = """
-            <div class='note'>
-                EMG tests dynamic range and contraction-related amplitude change.
-            </div>
-
-            <div class='section-d'>This protocol checks</div>
-            <div class='bullet'>• rest versus contraction separation</div>
-            <div class='bullet'>• RMS increase</div>
-            <div class='bullet'>• clipping during strong contraction</div>
-            <div class='bullet'>• activation timing</div>
-            """
-        elif signal == "EOG":
-            main_text = """
-            <div class='note'>
-                EOG tests slow, large biological deflections.
-            </div>
-
-            <div class='section-d'>This protocol checks</div>
-            <div class='bullet'>• blink detection</div>
-            <div class='bullet'>• eye-movement polarity</div>
-            <div class='bullet'>• baseline drift</div>
-            <div class='bullet'>• saturation during large deflections</div>
-            """
-        elif signal == "EEG":
-            main_text = """
-            <div class='note'>
-                EEG is the hardest mode because the signal is tiny and noise-sensitive.
-            </div>
-
-            <div class='section-d'>This protocol checks</div>
-            <div class='bullet'>• 50 Hz noise</div>
-            <div class='bullet'>• baseline stability</div>
-            <div class='bullet'>• alpha-band detectability</div>
-            <div class='bullet'>• artifact burden</div>
-            """
-        else:
-            main_text = """
-            <div class='note'>Generic protocol for ADC and signal-quality checks.</div>
-            """
 
         html = f"""
         <html>
         <head>{self.html_style()}</head>
         <body>
-            <div class="title">Why this protocol?</div>
+            <div class="title">Clean ECG → HRV workflow</div>
 
-            {main_text}
+            <div class='note'>
+                OPL should behave like one guided physiology path, not separate calculators.
+                The first public path is ECG acquisition followed by transparent HRV derivation.
+            </div>
+
+            <div class="section">Workflow map</div>
+            <div class="bullet">1. <b>Setup</b>: choose hardware, protocol, polarity, and recording plan.</div>
+            <div class="bullet">2. <b>Recorder</b>: acquire and save raw ECG with metadata.</div>
+            <div class="bullet">3. <b>ECG Calipers</b>: inspect raw/filtered ECG, average beat, and R-centred complexes.</div>
+            <div class="bullet">4. <b>RR Pairs</b>: see one interval as A→B, beat by beat.</div>
+            <div class="bullet">5. <b>RR Triplets</b>: see RR-pre, RR-post, ΔRR, pNN50, and RMSSD source geometry.</div>
+            <div class="bullet">6. <b>RR / NN Table</b>: accept or reject intervals; this becomes the HRV source of truth.</div>
+            <div class="bullet">7. <b>Visual HRV</b>: derive mean NN, HR, SDNN, RMSSD, pNN50, and Poincaré plots visually.</div>
+
+            <div class="section">Rule</div>
+            <div class="hint-box">
+                Never show a number before showing where it came from.
+            </div>
 
             <div class="section">Protocol note</div>
             <div class="note">{notes}</div>
-
-            <div class="section">Workflow</div>
-            <div class="bullet">1. Choose signal and protocol.</div>
-            <div class="bullet">2. Send setup to Recorder.</div>
-            <div class="bullet">3. Record the signal.</div>
-            <div class="bullet">4. Machine tab evaluates the recording session.</div>
-            <div class="bullet">5. Analysis inherits protocol and machine metadata.</div>
         </body>
         </html>
         """
