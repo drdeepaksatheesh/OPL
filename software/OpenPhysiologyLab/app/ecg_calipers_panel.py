@@ -1,6 +1,8 @@
 # app/ecg_calipers_panel.py
 
 import csv
+import io
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +49,7 @@ class ECGCalipersPanel(QWidget):
         self.current_template_overlay_y = None
         self.current_teaching_template_y = None
         self.default_view_seconds = 5.0
+        self.r_fast_overlay_max_traces = 80
 
         self.detected_r_peaks = np.array([], dtype=int)
         self.r_peak_detection_result = None
@@ -145,8 +148,8 @@ class ECGCalipersPanel(QWidget):
         self.r_complex_box.setFocusPolicy(Qt.ClickFocus)
         self.r_complex_box.addItem("All complexes")
         self.r_complex_box.setEnabled(False)
-        self.r_complex_box.setMinimumWidth(125)
-        self.r_complex_box.setToolTip("For R-centered complexes: show all complexes or isolate one numbered complex.")
+        self.r_complex_box.setMinimumWidth(115)
+        self.r_complex_box.setToolTip("R-centered modes: Fast 80 = 80 representative complexes; Full = all complexes; Density = 5-95% band + median. Then Complex 1, 2... isolate beats.")
         self.r_complex_box.currentIndexChanged.connect(self.r_complex_selection_changed)
         controls_layout.addWidget(QLabel("Complex"))
         controls_layout.addWidget(self.r_complex_box)
@@ -750,7 +753,7 @@ class ECGCalipersPanel(QWidget):
                     continue
 
                 rt = float(t[idx])
-                has_left = (rt - t_min) >= 0.28
+                has_left = (rt - t_min) >= 0.25
                 has_right = (t_max - rt) >= 0.45
                 has_rr_context = (n > 0 and n < len(peaks) - 1)
 
@@ -762,7 +765,7 @@ class ECGCalipersPanel(QWidget):
                     idx = int(idx)
                     if 0 <= idx < len(t) and np.isfinite(t[idx]):
                         rt = float(t[idx])
-                        if (rt - t_min) >= 0.28 and (t_max - rt) >= 0.45:
+                        if (rt - t_min) >= 0.25 and (t_max - rt) >= 0.45:
                             complete.append(n)
 
             return complete
@@ -1031,7 +1034,7 @@ class ECGCalipersPanel(QWidget):
             self,
             "Choose raw.csv",
             "",
-            "CSV files (*.csv);;All files (*.*)"
+            "ECG recordings (*.csv *.zip);;CSV files (*.csv);;OPL recording packages (*.zip);;All files (*.*)"
         )
         if not path:
             return
@@ -1043,15 +1046,267 @@ class ECGCalipersPanel(QWidget):
         except Exception as e:
             self.info_box.setText(f"Could not load raw.csv:\n{e}")
 
+
+
+    def apply_calipers_layout_polish(self):
+        try:
+            from PyQt5.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
+            for edit in list(self.findChildren(QPlainTextEdit)) + list(self.findChildren(QTextEdit)):
+                try:
+                    edit.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+                    edit.setMinimumWidth(320)
+                except Exception:
+                    pass
+            for widget in self.findChildren(QWidget):
+                try:
+                    if widget.__class__.__name__ == "QSplitter":
+                        sizes = widget.sizes()
+                        if len(sizes) == 2:
+                            total = int(sum(sizes))
+                            if total > 900 and sizes[1] < 390:
+                                widget.setSizes([max(500, total - 430), 430])
+                            widget.setChildrenCollapsible(False)
+                    if hasattr(widget, "title") and callable(widget.title):
+                        if str(widget.title()) in ("Caliper Measurements", "Navigation", "Method", "Source Audit"):
+                            widget.setMinimumWidth(360)
+                except Exception:
+                    pass
+            self.ensure_source_audit_box()
+            self.update_source_audit_box()
+        except Exception:
+            pass
+
+
+
+
+
+    def ensure_source_audit_box(self):
+        # Compact source/provenance box. Three visible lines avoid vertical
+        # clipping in the Calipers right panel.
+        try:
+            if hasattr(self, "source_audit_box") and self.source_audit_box is not None:
+                try:
+                    self.source_audit_box.setMaximumHeight(92)
+                    self.source_audit_box.setMinimumHeight(82)
+                    self.source_audit_box.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                    self.source_audit_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                    self.source_audit_box.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+                except Exception:
+                    pass
+                return
+
+            from PyQt5.QtWidgets import QGroupBox, QVBoxLayout, QPlainTextEdit
+
+            target_group = None
+            for group in self.findChildren(QGroupBox):
+                try:
+                    if str(group.title()) == "Caliper Measurements":
+                        target_group = group
+                        break
+                except Exception:
+                    pass
+
+            if target_group is None:
+                return
+
+            parent = target_group.parentWidget()
+            if parent is None or parent.layout() is None:
+                return
+
+            self.source_audit_group = QGroupBox("Source Audit")
+            self.source_audit_group.setMinimumWidth(360)
+            audit_layout = QVBoxLayout(self.source_audit_group)
+            audit_layout.setContentsMargins(6, 3, 6, 3)
+
+            self.source_audit_box = QPlainTextEdit()
+            self.source_audit_box.setReadOnly(True)
+            self.source_audit_box.setMaximumHeight(92)
+            self.source_audit_box.setMinimumHeight(82)
+            self.source_audit_box.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.source_audit_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.source_audit_box.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+            self.source_audit_box.setPlainText("No ECG source loaded yet.")
+            audit_layout.addWidget(self.source_audit_box)
+
+            parent.layout().insertWidget(0, self.source_audit_group)
+        except Exception:
+            pass
+
+    def _audit_source_name(self):
+        # Canonical source-name lookup for ECG Calipers Source Audit.
+        try:
+            if getattr(self, "current_csv_path", None) is not None:
+                return Path(str(self.current_csv_path)).name
+        except Exception:
+            pass
+
+        try:
+            value = getattr(self, "loaded_ecg_source_path", "")
+            if value:
+                return Path(str(value)).name
+        except Exception:
+            pass
+
+        try:
+            value = getattr(self, "loaded_ecg_source_name", "")
+            if value:
+                return str(value)
+        except Exception:
+            pass
+
+        return "current recording"
+
+
+    def _audit_time_array(self):
+        # Canonical time array for ECG Calipers Source Audit.
+        # Prefer the full recording time vector. Fall back to current plot time.
+        try:
+            if getattr(self, "current_time_s", None) is not None:
+                t = np.asarray(self.current_time_s, dtype=float)
+                if t.ndim == 1 and len(t) > 2:
+                    return "current_time_s", t
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, "current_plot_t", None) is not None:
+                t = np.asarray(self.current_plot_t, dtype=float)
+                if t.ndim == 1 and len(t) > 2:
+                    return "current_plot_t", t
+        except Exception:
+            pass
+
+        return "", None
+
+
+
+
+
+    def update_source_audit_box(self):
+        # Compact provenance panel for the currently loaded ECG source.
+        try:
+            self.ensure_source_audit_box()
+            if not hasattr(self, "source_audit_box") or self.source_audit_box is None:
+                return
+
+            source = self._audit_source_name()
+            time_key, t = self._audit_time_array()
+
+            samples = None
+            duration = None
+            fs = None
+
+            if t is not None:
+                t = np.asarray(t, dtype=float)
+                t = t[np.isfinite(t)]
+                if len(t) > 2:
+                    samples = int(len(t))
+                    duration = float(t[-1] - t[0])
+                    d = np.diff(t)
+                    d = d[np.isfinite(d) & (d > 0)]
+                    if len(d) > 0:
+                        fs = 1.0 / float(np.nanmedian(d))
+
+            r_count = 0
+            try:
+                peaks = getattr(self, "detected_r_peaks", None)
+                if peaks is not None:
+                    r_count = int(len(peaks))
+            except Exception:
+                r_count = 0
+
+            complete = 0
+            try:
+                traces = getattr(self, "current_r_centered_traces", None)
+                if traces is not None:
+                    arr = np.asarray(traces)
+                    if arr.ndim >= 2:
+                        complete = int(arr.shape[0])
+            except Exception:
+                complete = 0
+
+            if not complete:
+                try:
+                    complete = int(len(self.get_complete_pqrst_peak_numbers()))
+                except Exception:
+                    pass
+
+            if not complete:
+                try:
+                    import re as _re
+                    if hasattr(self, "rpeak_status_label"):
+                        m = _re.search(r"complete\s+\d+/(\d+)", str(self.rpeak_status_label.text()))
+                        if m:
+                            complete = int(m.group(1))
+                except Exception:
+                    pass
+
+            channel = "?"
+            try:
+                if hasattr(self, "channel_box"):
+                    channel = str(self.channel_box.currentText())
+            except Exception:
+                pass
+
+            time_source = getattr(self, "last_time_source_name", "") or time_key or "unknown"
+
+            fs_txt = f"{fs:.1f}" if fs is not None else "--"
+            dur_txt = f"{duration:.3f}" if duration is not None else "--"
+            samp_txt = f"{samples}" if samples is not None else "--"
+            comp_txt = f"{complete}" if complete else "--"
+
+            self.source_audit_box.setPlainText(chr(10).join([
+                f"File: {source}",
+                f"Ch {channel} | {time_source} | fs {fs_txt} Hz",
+                f"N {samp_txt} | {dur_txt} s | R {r_count} | C {comp_txt}",
+            ]))
+        except Exception as exc:
+            try:
+                if hasattr(self, "source_audit_box") and self.source_audit_box is not None:
+                    self.source_audit_box.setPlainText(
+                        "Source Audit update failed.\\n"
+                        f"{type(exc).__name__}: {exc}"
+                    )
+            except Exception:
+                pass
+
+    def read_calipers_csv_rows(self, path):
+        path = Path(path)
+
+        if path.suffix.lower() == ".zip":
+            with zipfile.ZipFile(path) as zf:
+                names = zf.namelist()
+                raw_names = [n for n in names if n.lower().endswith("/raw.csv") or n.lower() == "raw.csv"]
+                if not raw_names:
+                    raw_names = [n for n in names if n.lower().endswith(".csv")]
+                if not raw_names:
+                    raise ValueError("No CSV/raw.csv found inside zip.")
+                raw_name = raw_names[0]
+                text_data = zf.read(raw_name).decode("utf-8-sig", errors="replace")
+                reader = csv.DictReader(io.StringIO(text_data))
+                rows = list(reader)
+                columns = reader.fieldnames or []
+                return rows, columns
+
+        with path.open("r", newline="", encoding="utf-8-sig", errors="replace") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            columns = reader.fieldnames or []
+
+        return rows, columns
+
+
     def load_raw_csv(self, path):
+        try:
+            self.loaded_ecg_source_path = str(path)
+            self.loaded_ecg_source_name = Path(path).name
+        except Exception:
+            pass
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(str(path))
 
-        with path.open("r", newline="", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-            columns = reader.fieldnames or []
+        rows, columns = self.read_calipers_csv_rows(path)
 
         if not rows:
             raise ValueError("CSV has no data rows.")
@@ -1107,26 +1362,78 @@ class ECGCalipersPanel(QWidget):
         ]
         self.update_right_guidance_panel()
         self.update_measurement_summary()
+        try:
+            self.update_source_audit_box()  # final-source-audit-after-load
+        except Exception:
+            pass
+        try:
+            self.update_source_audit_box()  # robust-final-load-audit-refresh
+        except Exception:
+            pass
 
     def extract_time_s(self, rows, columns):
-        if "time_us" in columns:
-            values = np.array([self.safe_float(row.get("time_us")) for row in rows], dtype=float)
-            if np.isfinite(values).sum() > 2:
-                start = values[np.isfinite(values)][0]
-                return (values - start) / 1_000_000.0
+        # Device/sample-clock timing is the source of truth for ECG/HRV.
+        # pc_time_s is receive/write timing and can be jittery, so it is fallback only.
+        colmap = {str(c).lower().strip(): c for c in columns}
 
-        if "pc_time_s" in columns:
-            values = np.array([self.safe_float(row.get("pc_time_s")) for row in rows], dtype=float)
-            if np.isfinite(values).sum() > 2:
-                start = values[np.isfinite(values)][0]
-                return values - start
+        def values_for(name):
+            if name not in colmap:
+                return None
+            return np.array([self.safe_float(row.get(colmap[name])) for row in rows], dtype=float)
 
-        if "sample" in columns:
-            sample = np.array([self.safe_float(row.get("sample")) for row in rows], dtype=float)
-            if np.isfinite(sample).sum() > 2:
-                return sample - sample[0]
+        def good(values):
+            return values is not None and int(np.isfinite(values).sum()) > 2
 
-        return np.arange(len(rows), dtype=float)
+        def start_at_zero(values):
+            finite = np.isfinite(values)
+            start = values[finite][0]
+            return values - start
+
+        for name in ["time_s", "device_time_s", "t_s", "seconds", "sec"]:
+            values = values_for(name)
+            if good(values):
+                return start_at_zero(values)
+
+        for name in ["time_ms", "device_time_ms", "t_ms"]:
+            values = values_for(name)
+            if good(values):
+                self.last_time_source_name = name
+                return start_at_zero(values) / 1000.0
+
+        for name in ["time_us", "device_time_us", "t_us", "microseconds"]:
+            values = values_for(name)
+            if good(values):
+                self.last_time_source_name = name
+                return start_at_zero(values) / 1_000_000.0
+
+        for c in columns:
+            lname = str(c).lower().strip()
+            if "pc_time" in lname:
+                continue
+            if "time_us" in lname or "device_time" in lname:
+                values = np.array([self.safe_float(row.get(c)) for row in rows], dtype=float)
+                if good(values):
+                    t = start_at_zero(values)
+                    d = np.diff(t[np.isfinite(t)])
+                    d = d[np.isfinite(d) & (d > 0)]
+                    if len(d) and float(np.nanmedian(d)) > 100.0:
+                        return t / 1_000_000.0
+                    if len(d) and float(np.nanmedian(d)) > 0.02:
+                        return t / 1000.0
+                    return t
+
+        values = values_for("pc_time_s")
+        if good(values):
+            return start_at_zero(values)
+
+        for name in ["sample", "sample_index", "sample_number"]:
+            values = values_for(name)
+            if good(values):
+                return start_at_zero(values) / 500.0
+
+        self.last_time_source_name = 'row index / 500 Hz fallback'
+        return np.arange(len(rows), dtype=float) / 500.0
+
 
     def extract_channels(self, rows, columns):
         channel_data = {}
@@ -1876,13 +2183,43 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             return True
 
+
+    def representative_r_complex_indices(self, n, max_show=80):
+        # Choose representative R-centered complexes for fast overlay.
+        #
+        # The input order is chronological order after incomplete/outlier rejection.
+        # If there are more than max_show valid complexes, divide the valid sequence
+        # into max_show chronological bins and take the centre beat of each bin.
+        n = int(max(0, n))
+        max_show = int(max(1, max_show))
+        if n <= max_show:
+            return np.arange(n, dtype=int)
+
+        edges = np.linspace(0, n, max_show + 1)
+        indices = []
+        for i in range(max_show):
+            lo = int(np.floor(edges[i]))
+            hi = int(np.floor(edges[i + 1]))
+            if hi <= lo:
+                hi = min(n, lo + 1)
+            centre = lo + (hi - lo) // 2
+            centre = max(0, min(n - 1, centre))
+            indices.append(centre)
+
+        return np.asarray(sorted(set(indices)), dtype=int)
+
+
+
     def plot_current_ecg_trace(self, t, y):
+        try:
+            self.update_source_audit_box()  # plot-source-audit-refresh
+        except Exception:
+            pass
         label = str(getattr(self, "current_display_label", ""))
 
         if label == "R-centered complexes":
             traces = getattr(self, "current_r_centered_traces", None)
             avg = getattr(self, "current_r_centered_average", None)
-            selected = None
 
             try:
                 if traces is not None and len(traces) > 0:
@@ -1890,30 +2227,97 @@ class ECGCalipersPanel(QWidget):
                     n = int(traces.shape[0])
                     selected = self.get_selected_r_complex_index(n)
 
+                    combo_text = ""
+                    try:
+                        combo_text = str(self.r_complex_box.currentText()) if hasattr(self, "r_complex_box") else ""
+                    except Exception:
+                        combo_text = ""
+
+                    mode = "Fast 80"
+                    if combo_text.startswith("Full"):
+                        mode = "Full"
+                    elif combo_text.startswith("Density"):
+                        mode = "Density"
+                    elif combo_text.startswith("Fast") or combo_text.startswith("All"):
+                        mode = "Fast 80"
+                    elif selected is not None:
+                        mode = "Isolated complex"
+
                     if selected is None:
-                        # Summated view: every complex gets its own stable color.
-                        for i, row in enumerate(traces):
-                            if len(row) != len(t):
-                                continue
-                            color = pg.intColor(i, hues=max(9, n), values=1, maxValue=255)
+                        if mode == "Density":
+                            # Density/envelope view: no spaghetti traces.
+                            p05 = np.nanpercentile(traces, 5, axis=0)
+                            p50 = np.nanpercentile(traces, 50, axis=0)
+                            p95 = np.nanpercentile(traces, 95, axis=0)
+
+                            low_curve = self.plot.plot(t, p05, pen=pg.mkPen((0, 229, 255, 45), width=1))
+                            high_curve = self.plot.plot(t, p95, pen=pg.mkPen((0, 229, 255, 45), width=1))
                             try:
-                                color.setAlpha(115)
+                                band = pg.FillBetweenItem(
+                                    low_curve,
+                                    high_curve,
+                                    brush=pg.mkBrush(0, 229, 255, 55),
+                                )
+                                self.plot.addItem(band)
                             except Exception:
                                 pass
-                            self.plot.plot(
-                                t,
-                                row,
-                                pen=pg.mkPen(color, width=1.15),
-                                name=f"Complex {i + 1}"
-                            )
+
+                            self.plot.plot(t, p50, pen=pg.mkPen("#00E5FF", width=3.0), name="Median R-centered complex")
+                            if avg is not None and len(avg) == len(t):
+                                self.plot.plot(t, avg, pen=pg.mkPen("#FFC400", width=3.0), name="Average R-centered complex")
+
+                            if hasattr(self, "r_status_label"):
+                                self.r_status_label.setText(f"R ref: 0 ms | Density: median + 5-95% band | n={n}")
+
+                        elif mode == "Full":
+                            # Deliberately heavy view: all traces.
+                            for i, row in enumerate(traces):
+                                if len(row) != len(t):
+                                    continue
+                                color = pg.intColor(i, hues=max(9, n), values=1, maxValue=255)
+                                try:
+                                    color.setAlpha(75)
+                                except Exception:
+                                    pass
+                                self.plot.plot(t, row, pen=pg.mkPen(color, width=0.85), name=f"Complex {i + 1}")
+
+                            if avg is not None and len(avg) == len(t):
+                                self.plot.plot(t, avg, pen=pg.mkPen("#FFC400", width=3.0), name="Average R-centered complex")
+
+                            if hasattr(self, "r_status_label"):
+                                self.r_status_label.setText(f"R ref: 0 ms | Full: showing all {n} complexes (slow)")
+
+                        else:
+                            # Fast 80: 80-bin chronological representatives only.
+                            max_show = int(getattr(self, "r_fast_overlay_max_traces", 80))
+                            indices = self.representative_r_complex_indices(n, max_show=max_show)
+                            for i in indices:
+                                row = traces[int(i)]
+                                if len(row) != len(t):
+                                    continue
+                                self.plot.plot(
+                                    t,
+                                    row,
+                                    pen=pg.mkPen(0, 229, 255, 70, width=0.9),
+                                    name=f"Representative complex {int(i) + 1}",
+                                )
+
+                            if avg is not None and len(avg) == len(t):
+                                self.plot.plot(t, avg, pen=pg.mkPen("#FFC400", width=3.2), name="Average R-centered complex")
+
+                            if hasattr(self, "r_status_label"):
+                                self.r_status_label.setText(
+                                    f"R ref: 0 ms | Fast 80: showing {len(indices)} of {n} valid complexes | 80 representatives"
+                                )
+
                     else:
-                        # Isolation/comparison view: selected complex against average.
+                        # Isolated complex view: selected complex against average.
                         if avg is not None and len(avg) == len(t):
                             self.plot.plot(
                                 t,
                                 avg,
                                 pen=pg.mkPen((180, 220, 255, 145), width=2, style=Qt.DashLine),
-                                name="Average beat"
+                                name="Average beat",
                             )
 
                         row = traces[selected]
@@ -1922,30 +2326,34 @@ class ECGCalipersPanel(QWidget):
                             color.setAlpha(255)
                         except Exception:
                             pass
-                        self.plot.plot(
-                            t,
-                            row,
-                            pen=pg.mkPen(color, width=2.6),
-                            name=f"Complex {selected + 1}"
-                        )
+                        self.plot.plot(t, row, pen=pg.mkPen(color, width=3.0), name=f"Complex {selected + 1}")
+                        if hasattr(self, "r_status_label"):
+                            self.r_status_label.setText(f"R ref: 0 ms | isolated Complex {selected + 1}/{n} against average")
+
+                    # Stable generous y range so R and S are not clipped.
+                    try:
+                        vals = traces[np.isfinite(traces)]
+                        if avg is not None and len(avg) == len(t):
+                            avg_vals = np.asarray(avg, dtype=float)
+                            avg_vals = avg_vals[np.isfinite(avg_vals)]
+                            vals = np.concatenate([vals, avg_vals]) if vals.size else avg_vals
+                        if vals.size > 0:
+                            y_min = float(np.nanmin(vals))
+                            y_max = float(np.nanmax(vals))
+                            y_span = max(1.0, y_max - y_min)
+                            y_pad = max(60.0, 0.22 * y_span)
+                            self.plot.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
+                    except Exception:
+                        pass
+
+                    try:
+                        if len(t) > 1:
+                            self.plot.setXRange(float(np.nanmin(t)), float(np.nanmax(t)), padding=0)
+                    except Exception:
+                        pass
 
             except Exception:
                 pass
-
-            # Average on top only in all-complex summated mode.
-            if selected is None:
-                try:
-                    if avg is None:
-                        avg = y
-                    if avg is not None and len(avg) == len(t):
-                        self.plot.plot(
-                            t,
-                            avg,
-                            pen=pg.mkPen("#FFC400", width=2.6),
-                            name="Average of R-centered complexes"
-                        )
-                except Exception:
-                    pass
 
             try:
                 self.plot.addLine(x=0.0, pen=pg.mkPen((180, 220, 255, 130), width=1))
@@ -1954,26 +2362,26 @@ class ECGCalipersPanel(QWidget):
             return
 
         if label == "Average beat":
-            self.plot.plot(
-                t,
-                y,
-                pen=pg.mkPen("#FFC400", width=2.7),
-                name="Average beat"
-            )
+            self.plot.plot(t, y, pen=pg.mkPen("#FFC400", width=2.7), name="Average beat")
+            try:
+                vals = np.asarray(y, dtype=float)
+                vals = vals[np.isfinite(vals)]
+                if vals.size > 0:
+                    y_min = float(np.nanmin(vals))
+                    y_max = float(np.nanmax(vals))
+                    y_span = max(1.0, y_max - y_min)
+                    y_pad = max(60.0, 0.22 * y_span)
+                    self.plot.setYRange(y_min - y_pad, y_max + y_pad, padding=0)
+            except Exception:
+                pass
             try:
                 self.plot.addLine(x=0.0, pen=pg.mkPen((180, 220, 255, 130), width=1))
             except Exception:
                 pass
             return
 
-        self.plot.plot(
-            t,
-            y,
-            pen=pg.mkPen(self.get_trace_color(), width=1),
-            name=getattr(self, "current_display_label", "ECG")
-        )
+        self.plot.plot(t, y, pen=pg.mkPen(self.get_trace_color(), width=1), name=getattr(self, "current_display_label", "ECG"))
 
-        # Selected R reference line for Raw/Filtered views.
         try:
             if (not self.is_epoch_review_view()) and self.should_show_r_reference_overlay():
                 peaks = np.asarray(getattr(self, "detected_r_peaks", []), dtype=int)
@@ -1986,7 +2394,6 @@ class ECGCalipersPanel(QWidget):
                         self.plot.addLine(x=float(tt[idx]), pen=pg.mkPen((180, 220, 255, 130), width=1))
         except Exception:
             pass
-
 
     def ensure_r_peaks_for_template(self, t, filtered):
         # Teaching Template ECG needs R peaks as anchors.
@@ -3495,6 +3902,10 @@ class ECGCalipersPanel(QWidget):
 
 
     def refresh_plot(self):
+        try:
+            self.update_source_audit_box()  # refresh-source-audit
+        except Exception:
+            pass
         self.ensure_p_marker_drag_signals()
         self.install_ecg_navigation_event_filters()
         self.install_ecg_arrow_shortcuts()
@@ -3676,6 +4087,11 @@ class ECGCalipersPanel(QWidget):
 
         try:
             self.update_ecg_calipers_right_panels()
+        except Exception:
+            pass
+
+        try:
+            self.update_source_audit_box()  # final-source-audit-after-refresh
         except Exception:
             pass
 
@@ -5968,8 +6384,16 @@ class ECGCalipersPanel(QWidget):
 
 
 
+
     def update_r_complex_selector(self, count, enable=False):
-        # Populate the R-centered complex selector without causing recursive plot refresh.
+        # Populate R-centered selector without causing recursive plot refresh.
+        #
+        # First three entries are all-complex display modes:
+        #   Fast 80: 80 chronological representatives from valid complexes
+        #   Full: all valid complexes, slower
+        #   Density: 5-95% band + median + average
+        #
+        # Individual complexes start after these three mode entries.
         try:
             if not hasattr(self, "r_complex_box"):
                 return
@@ -5977,9 +6401,12 @@ class ECGCalipersPanel(QWidget):
             count = int(max(0, count))
             old_text = self.r_complex_box.currentText()
 
+            mode_items = ["Fast 80", "Full", "Density"]
+
             self.r_complex_box.blockSignals(True)
             self.r_complex_box.clear()
-            self.r_complex_box.addItem("All complexes")
+            for item in mode_items:
+                self.r_complex_box.addItem(item)
             for i in range(count):
                 self.r_complex_box.addItem(f"Complex {i + 1}")
 
@@ -6001,20 +6428,26 @@ class ECGCalipersPanel(QWidget):
             except Exception:
                 pass
 
-    def get_selected_r_complex_index(self, count=None):
-        # None means all complexes. Otherwise returns zero-based complex index.
+
+    def get_selected_r_complex_index(self, count):
+        # In R-centered mode, the Complex box begins with three all-complex
+        # display modes. Only entries after those modes are actual isolated
+        # complex numbers.
         try:
             if not hasattr(self, "r_complex_box") or not self.r_complex_box.isEnabled():
                 return None
+            text = str(self.r_complex_box.currentText())
+            if text.startswith("Fast") or text.startswith("Full") or text.startswith("Density") or text.startswith("All"):
+                return None
 
             idx = int(self.r_complex_box.currentIndex())
-            if idx <= 0:
+            # New selector: 0 Fast, 1 Full, 2 Density, 3 Complex 1...
+            selected = idx - 3
+            if selected < 0:
                 return None
-
-            selected = idx - 1
-            if count is not None and selected >= int(count):
+            if selected >= int(count):
                 return None
-            return selected
+            return int(selected)
         except Exception:
             return None
 
@@ -6090,7 +6523,7 @@ class ECGCalipersPanel(QWidget):
         except Exception:
             return np.array([], dtype=int)
 
-    def make_r_centered_epochs(self, t, y_raw, notch=True, pre_s=0.20, post_s=0.55):
+    def make_r_centered_epochs(self, t, y_raw, notch=True, pre_s=0.25, post_s=0.45):
         # Build R-centered ECG complexes from the normal monitor-style filtered
         # trace. Returns relative time, all valid complexes, and their average.
         try:
