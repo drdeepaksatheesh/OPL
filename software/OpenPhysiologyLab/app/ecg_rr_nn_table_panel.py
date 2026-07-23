@@ -126,33 +126,101 @@ def _read_numeric_csv(path):
     if arr.ndim != 2 or arr.shape[0] < 5:
         raise ValueError("CSV has too few numeric rows")
 
+    # Canonical OPL time selection.
+    #
+    # Important bug fixed here:
+    # Older RR/NN and Triplets loaders treated a column named "sample" as a
+    # generic time column. Since sample increments by 1, _normalize_time_column()
+    # interpreted it as milliseconds and produced fs ~1000 Hz for a 500 Hz file.
+    #
+    # Correct priority:
+    # 1. sample_time_s / device seconds
+    # 2. time_us / device microseconds
+    # 3. time_ms / device milliseconds
+    # 4. sample number converted using default_fs = 500 Hz
+    # 5. row index / 500 Hz fallback
+    lowered = [str(h).strip().lower() for h in header]
     time_idx = None
-    for i, h in enumerate(header):
-        if _looks_like_time_name(h):
-            col = arr[:, i]
+    time_s = None
+
+    def finite_good(col):
+        try:
             finite = np.isfinite(col)
-            if np.sum(finite) > 5:
-                dif = np.diff(col[finite])
-                if len(dif) and np.nanmedian(dif) > 0:
-                    time_idx = i
+            if int(np.sum(finite)) <= 5:
+                return False
+            dif = np.diff(col[finite])
+            return len(dif) > 0 and float(np.nanmedian(dif)) > 0
+        except Exception:
+            return False
+
+    for want in ["sample_time_s", "time_s", "device_time_s", "t_s"]:
+        if want in lowered:
+            idx = lowered.index(want)
+            col = arr[:, idx].astype(float)
+            if finite_good(col):
+                time_idx = idx
+                time_s = col - np.nanmin(col[np.isfinite(col)])
+                break
+
+    if time_s is None:
+        for want in ["time_us", "device_time_us", "t_us"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    time_s = (col - np.nanmin(col[np.isfinite(col)])) / 1_000_000.0
                     break
 
-    if time_idx is None:
-        col = arr[:, 0]
-        finite = np.isfinite(col)
-        if np.sum(finite) > 5:
-            dif = np.diff(col[finite])
-            if len(dif) and np.nanmedian(dif) > 0 and np.nanmax(col) - np.nanmin(col) > arr.shape[0] * 0.2:
-                time_idx = 0
+    if time_s is None:
+        for want in ["time_ms", "device_time_ms", "t_ms"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    time_s = (col - np.nanmin(col[np.isfinite(col)])) / 1000.0
+                    break
 
-    if time_idx is not None:
-        time_s = _normalize_time_column(arr[:, time_idx])
-    else:
+    if time_s is None:
+        for want in ["sample", "sample_index", "sample_number"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    first = np.nanmin(col[np.isfinite(col)])
+                    time_s = (col - first) / 500.0
+                    break
+
+    if time_s is None:
         time_s = np.arange(arr.shape[0], dtype=float) / 500.0
+
+    non_signal_names = {
+        "segment_id",
+        "segment",
+        "sample",
+        "sample_index",
+        "sample_number",
+        "time",
+        "timestamp",
+        "sample_time_s",
+        "time_s",
+        "device_time_s",
+        "t_s",
+        "time_us",
+        "device_time_us",
+        "t_us",
+        "time_ms",
+        "device_time_ms",
+        "t_ms",
+        "pc_time_s",
+        "pc_time",
+    }
 
     channels = {}
     for i, h in enumerate(header):
-        if i == time_idx or _looks_like_time_name(h):
+        if i == time_idx or str(h).strip().lower() in non_signal_names or _looks_like_time_name(h):
             continue
         col = arr[:, i].astype(float)
         finite = np.isfinite(col)
@@ -238,7 +306,8 @@ class ECGRRNNTablePanel(QWidget):
         self.raw_signal = None
         self.filtered_signal = None
         self.r_peaks = np.asarray([], dtype=int)
-        self.complete_peaks = np.asarray([], dtype=int)
+        self.complete_peaks = np.asarray([], dtype=int)  # morphology-complete beats
+        self.rr_peaks = np.asarray([], dtype=int)        # HRV/RR timing source
         self.interval_rows = []
         self._updating_tables = False
         self.selected_interval_index = 0
@@ -420,9 +489,12 @@ class ECGRRNNTablePanel(QWidget):
         diff_layout.addWidget(self.diff_table)
         table_splitter.addWidget(self.diff_group)
 
-        table_splitter.setSizes([1, 1])
+        self.table_splitter = table_splitter
+        table_splitter.setSizes([1040, 960])
         table_splitter.setCollapsible(0, False)
         table_splitter.setCollapsible(1, False)
+        table_splitter.setStretchFactor(0, 1)
+        table_splitter.setStretchFactor(1, 1)
         left_layout.addWidget(table_splitter, stretch=2)
 
         splitter.addWidget(left)
@@ -465,6 +537,8 @@ class ECGRRNNTablePanel(QWidget):
         self.setStyleSheet("QGroupBox { color: #E6C200; font-weight: bold; } QLabel { color: #D8DEE9; }")
         self.polish_interval_tables()
         self.polish_lower_tables()
+        self.fix_group_title_padding()
+        self.install_monitor_trackpad_scrub()
         self.update_method_box()
         self.update_summary()
         self.update_selected_interval_box()
@@ -587,30 +661,45 @@ class ECGRRNNTablePanel(QWidget):
 
         self.r_peaks = np.asarray(self.r_peaks, dtype=int)
         self.complete_peaks = np.asarray(self.complete_peaks, dtype=int)
+        self.rr_peaks = np.asarray(self.r_peaks, dtype=int)  # HRV/RR timing source
         self.selected_interval_index = 0
         self.monitor_center_s = None
         self.build_interval_rows()
         self.rebuild_tables()
         fs = safe_sampling_rate(self.time_s)
-        self.status_label.setText(f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | complete {len(self.complete_peaks)} | RR {len(self.interval_rows)}")
+        self.status_label.setText(f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | morphology complete {len(self.complete_peaks)} | RR {len(self.interval_rows)}")
 
     def build_interval_rows(self):
         self.interval_rows = []
-        if self.time_s is None or len(self.complete_peaks) < 2:
+        peaks = np.asarray(getattr(self, "rr_peaks", self.r_peaks), dtype=int)
+        if self.time_s is None or len(peaks) < 2:
             return
 
-        r_times = self.time_s[np.asarray(self.complete_peaks, dtype=int)]
+        complete_set = set(int(p) for p in np.asarray(self.complete_peaks, dtype=int))
+        r_times = self.time_s[peaks]
         for i in range(len(r_times) - 1):
+            a_peak = int(peaks[i])
+            b_peak = int(peaks[i + 1])
             a_time = float(r_times[i])
             b_time = float(r_times[i + 1])
             rr_ms = (b_time - a_time) * 1000.0
             hr_bpm = 60000.0 / rr_ms if rr_ms > 0 else float("nan")
             basic_accept = bool(np.isfinite(rr_ms) and self.default_nn_min_ms <= rr_ms <= self.default_nn_max_ms)
-            reason = "basic accepted" if basic_accept else "outside 300-2000 ms"
+
+            edge_note = ""
+            if a_peak not in complete_set or b_peak not in complete_set:
+                edge_note = "; edge morphology incomplete"
+
+            reason = ("basic accepted" if basic_accept else "outside 300-2000 ms") + edge_note
+
             self.interval_rows.append({
                 "id": i + 1,
                 "a_complex": i + 1,
                 "b_complex": i + 2,
+                "a_peak": a_peak,
+                "b_peak": b_peak,
+                "a_morphology_complete": a_peak in complete_set,
+                "b_morphology_complete": b_peak in complete_set,
                 "a_time_s": a_time,
                 "b_time_s": b_time,
                 "rr_ms": rr_ms,
@@ -747,6 +836,35 @@ class ECGRRNNTablePanel(QWidget):
         self.update_source_summary_label()
         self.update_selected_interval_box()
         self.update_plot_for_selected()
+
+    def fix_group_title_padding(self):
+        try:
+            style = (
+                'QGroupBox {'
+                ' margin-top: 18px;'
+                ' padding-top: 10px;'
+                ' border: 1px solid #243746;'
+                ' border-radius: 4px;'
+                '}'
+                'QGroupBox::title {'
+                ' subcontrol-origin: margin;'
+                ' subcontrol-position: top left;'
+                ' left: 8px;'
+                ' top: 2px;'
+                ' padding: 0 4px;'
+                ' color: #E6C200;'
+                ' font-weight: bold;'
+                '}'
+            )
+            for g in self.findChildren(QGroupBox):
+                try:
+                    title = g.title()
+                    if title in ('RR / NN intervals', 'Successive ΔNN / Poincaré source', 'Screening Summary', 'Selected Interval', 'Method', 'Source, screening window and NN decisions'):
+                        g.setStyleSheet(style)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def polish_lower_tables(self):
         try:
@@ -1152,7 +1270,7 @@ class ECGRRNNTablePanel(QWidget):
             name = self.raw_path.name if self.raw_path else "raw.csv"
             self.source_summary_label.setText(
                 f"Source: {name} | Channel: {self.current_channel or '--'} | "
-                f"R peaks: {len(self.r_peaks)} | Complete complexes: {len(self.complete_peaks)} | "
+                f"R peaks: {len(self.r_peaks)} | Morphology complete: {len(self.complete_peaks)} | "
                 f"RR {total} | NN {accepted} | Rejected {rejected} | "
                 f"Window {self.window_box.currentText()} | {'Full audit' if self.full_audit_columns_enabled() else 'Essential'}"
             )
@@ -1398,11 +1516,11 @@ class ECGRRNNTablePanel(QWidget):
         lines = [
             'Screening Summary',
             '',
-            'This tab screens RR intervals and decides which intervals become NN.',
+            'This tab screens RR intervals from consecutive detected R peaks and decides which intervals become NN.',
             'Full HRV statistics will be built in the Analysis/HRV tab.',
             '',
             'Recording source',
-            f'R peaks: {len(self.r_peaks)} | complete complexes: {len(self.complete_peaks)}',
+            f'R peaks: {len(self.r_peaks)} | morphology complete: {len(self.complete_peaks)}',
             f'RR intervals: {total} | NN accepted: {accepted_total} | rejected: {rejected_total}',
         ]
         if rows:
@@ -1532,6 +1650,113 @@ class ECGRRNNTablePanel(QWidget):
             self.select_interval_rows([i], focus_first=True, update_plot=update_plot)
         except Exception:
             pass
+
+    def install_monitor_trackpad_scrub(self):
+        try:
+            vb = self.plot.plotItem.vb
+            if not hasattr(self, '_original_monitor_wheel_event'):
+                self._original_monitor_wheel_event = vb.wheelEvent
+            vb.wheelEvent = self.monitor_wheel_scrub
+        except Exception:
+            pass
+
+    def monitor_window_seconds(self):
+        try:
+            txt = self.window_box.currentText().strip().lower()
+            if 'full' in txt or 'all' in txt:
+                if len(self.time_s):
+                    return max(0.001, float(self.time_s[-1]) - float(self.time_s[0]))
+            cleaned = txt.replace('seconds', ' ').replace('second', ' ').replace('sec', ' ').replace('s', ' ')
+            for part in cleaned.split():
+                try:
+                    return max(0.001, float(part))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return 60.0
+
+    def move_monitor_window_by(self, delta_s):
+        try:
+            if not hasattr(self, 'time_s') or self.time_s is None or len(self.time_s) < 2:
+                return
+            t0 = float(self.time_s[0])
+            t1 = float(self.time_s[-1])
+            duration = max(0.001, t1 - t0)
+            win = min(self.monitor_window_seconds(), duration)
+            half = win / 2.0
+            center = float(getattr(self, 'monitor_center_s', (t0 + t1) / 2.0)) + float(delta_s)
+            if duration <= win:
+                center = (t0 + t1) / 2.0
+            else:
+                center = max(t0 + half, min(t1 - half, center))
+            self.monitor_center_s = center
+            self.update_plot_for_selected()
+        except Exception as exc:
+            try:
+                self.status_label.setText(f'Scrub failed: {exc}')
+            except Exception:
+                pass
+
+    def monitor_wheel_scrub(self, event, *args, **kwargs):
+        try:
+            if not hasattr(self, 'time_s') or self.time_s is None or len(self.time_s) < 2:
+                original = getattr(self, '_original_monitor_wheel_event', None)
+                if original is not None:
+                    return original(event)
+                return
+
+            dx = 0.0
+            dy = 0.0
+            used_pixels = False
+
+            try:
+                pd = event.pixelDelta()
+                if not pd.isNull():
+                    dx = float(pd.x())
+                    dy = float(pd.y())
+                    used_pixels = True
+            except Exception:
+                pass
+
+            if not used_pixels:
+                try:
+                    ad = event.angleDelta()
+                    dx = float(ad.x())
+                    dy = float(ad.y())
+                except Exception:
+                    try:
+                        dy = float(event.delta())
+                    except Exception:
+                        dy = 0.0
+
+            dominant = dx if abs(dx) > abs(dy) else dy
+            if abs(dominant) < 1e-9:
+                return
+
+            win = self.monitor_window_seconds()
+            if used_pixels:
+                delta_s = -dominant * win / 900.0
+            else:
+                delta_s = -(dominant / 120.0) * win * 0.12
+
+            if abs(delta_s) < 0.002:
+                try:
+                    event.accept()
+                except Exception:
+                    pass
+                return
+
+            self.move_monitor_window_by(delta_s)
+            try:
+                event.accept()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                event.accept()
+            except Exception:
+                pass
 
     def plot_mouse_clicked(self, event):
         try:
@@ -2328,7 +2553,7 @@ class ECGRRNNTablePanel(QWidget):
         self.plot.plot(px, py, pen=pg.mkPen(NN_FILTERED_COLOR, width=1.05))
         if self.should_draw_context_r_markers(start, end):
             try:
-                r_times = self.time_s[np.asarray(self.complete_peaks, dtype=int)]
+                r_times = self.time_s[np.asarray(getattr(self, 'rr_peaks', self.r_peaks), dtype=int)]
                 for rt in r_times:
                     if start <= rt <= end:
                         self.plot.addItem(pg.InfiniteLine(float(rt), angle=90, pen=pg.mkPen(NN_SUBTLE_R_COLOR, width=0.6, style=Qt.DotLine)))
@@ -2387,6 +2612,7 @@ class ECGRRNNTablePanel(QWidget):
             '- Arrow keys: previous/next interval.',
             '- Space: use/reject selected interval or selected group.',
             '- Click monitor: select interval under cursor.',
+            '- Two-finger trackpad scroll on monitor: scrub through recording.',
             '- Drag monitor: select a group of intervals.',
             '',
             'Reject when:',

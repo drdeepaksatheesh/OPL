@@ -14,7 +14,10 @@ the accepted/rejected NN decisions directly from the RR / NN Table tab.
 from __future__ import annotations
 
 import csv
+import io
 import math
+import json
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -47,6 +50,7 @@ class ECGVisualHRVPanel(QWidget):
         super().__init__(parent)
 
         self.csv_path = None
+        self.recording_metadata = {}
         self.time_s = np.asarray([], dtype=float)
         self.channels = {}
         self.channel_name = ""
@@ -88,7 +92,7 @@ class ECGVisualHRVPanel(QWidget):
         controls = QHBoxLayout(controls_group)
         controls.setContentsMargins(8, 8, 8, 8)
 
-        self.load_button = QPushButton("Load raw.csv")
+        self.load_button = QPushButton("Load ECG file")
         self.load_button.clicked.connect(self.load_csv_dialog)
         controls.addWidget(self.load_button)
 
@@ -259,21 +263,24 @@ class ECGVisualHRVPanel(QWidget):
     # ------------------------------------------------------------------
     # Loading and signal processing
     # ------------------------------------------------------------------
+
     def load_csv_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load ECG CSV",
+            "Load ECG recording",
             "",
-            "CSV files (*.csv);;All files (*.*)",
+            "ECG recordings (*.csv *.zip);;CSV files (*.csv);;OPL recording packages (*.zip);;All files (*.*)",
         )
         if path:
             self.load_csv(path)
 
+
     def load_csv(self, path):
         self.csv_path = str(path)
-        time_s, channels = self.read_numeric_csv(path)
+        time_s, channels, metadata = self.read_numeric_recording(path)
+        self.recording_metadata = metadata or {}
         if not channels:
-            self.status_label.setText("No numeric signal channels found.")
+            self.status_label.setText("No usable signal channel found. Check raw.csv columns.")
             return
 
         self.time_s = time_s
@@ -311,12 +318,66 @@ class ECGVisualHRVPanel(QWidget):
         self.successive_pairs_cache = self.successive_nn_pairs()
         self.selected_source_index = 0
 
-    def read_numeric_csv(self, path):
+
+    def read_numeric_recording(self, path):
+        # Read CSV, OPL recording folder, or OPL recording zip.
+        # Prefer device time_us/time_s over pc_time_s for HRV.
         path = Path(path)
-        with path.open("r", newline="", encoding="utf-8-sig", errors="replace") as f:
-            rows = list(csv.reader(f))
+        metadata = {}
+
+        if path.is_dir():
+            raw_path = path / "raw.csv"
+            meta_path = path / "metadata.json"
+            if not raw_path.exists():
+                matches = list(path.rglob("raw.csv"))
+                if matches:
+                    raw_path = matches[0]
+            if meta_path.exists():
+                try:
+                    metadata = json.loads(meta_path.read_text(encoding="utf-8", errors="replace"))
+                except Exception:
+                    metadata = {}
+            if not raw_path.exists():
+                return np.asarray([], dtype=float), {}, metadata
+            return self.read_numeric_csv_text(raw_path.read_text(encoding="utf-8-sig", errors="replace"), source_name=str(raw_path), metadata=metadata)
+
+        if path.suffix.lower() == ".zip":
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    names = zf.namelist()
+                    raw_names = [n for n in names if n.lower().endswith("/raw.csv") or n.lower() == "raw.csv"]
+                    if not raw_names:
+                        raw_names = [n for n in names if n.lower().endswith(".csv")]
+                    if not raw_names:
+                        return np.asarray([], dtype=float), {}, metadata
+                    raw_name = raw_names[0]
+
+                    meta_names = [n for n in names if n.lower().endswith("/metadata.json") or n.lower() == "metadata.json"]
+                    if meta_names:
+                        try:
+                            metadata = json.loads(zf.read(meta_names[0]).decode("utf-8", errors="replace"))
+                        except Exception:
+                            metadata = {}
+
+                    raw_text = zf.read(raw_name).decode("utf-8-sig", errors="replace")
+                    metadata["_opl_package_path"] = str(path)
+                    metadata["_opl_raw_member"] = raw_name
+                    return self.read_numeric_csv_text(raw_text, source_name=f"{path.name}:{raw_name}", metadata=metadata)
+            except Exception:
+                return np.asarray([], dtype=float), {}, metadata
+
+        return self.read_numeric_csv_text(path.read_text(encoding="utf-8-sig", errors="replace"), source_name=str(path), metadata=metadata)
+
+    def read_numeric_csv(self, path):
+        # Backward-compatible wrapper used by older code paths.
+        time_s, channels, _metadata = self.read_numeric_recording(path)
+        return time_s, channels
+
+    def read_numeric_csv_text(self, text, source_name="", metadata=None):
+        metadata = metadata or {}
+        rows = list(csv.reader(io.StringIO(text)))
         if not rows:
-            return np.asarray([], dtype=float), {}
+            return np.asarray([], dtype=float), {}, metadata
 
         headers = [h.strip() if h.strip() else f"col{i+1}" for i, h in enumerate(rows[0])]
         numeric = []
@@ -327,30 +388,44 @@ class ECGVisualHRVPanel(QWidget):
             ok = False
             for item in row[:len(headers)]:
                 try:
-                    val = float(str(item).strip())
-                    ok = True
+                    item_s = str(item).strip()
+                    if item_s == "":
+                        val = np.nan
+                    else:
+                        val = float(item_s)
+                        ok = True
                 except Exception:
                     val = np.nan
                 vals.append(val)
             if ok:
                 numeric.append(vals)
         if not numeric:
-            return np.asarray([], dtype=float), {}
+            return np.asarray([], dtype=float), {}, metadata
 
         arr = np.asarray(numeric, dtype=float)
         time_idx = self.find_time_column(headers, arr)
         if time_idx is None:
-            time_s = np.arange(arr.shape[0], dtype=float) / 500.0
+            fs = float(metadata.get("sample_rate_target_hz") or metadata.get("measured_sample_rate_from_device_time_hz") or 500.0)
+            if not np.isfinite(fs) or fs <= 0:
+                fs = 500.0
+            time_s = np.arange(arr.shape[0], dtype=float) / fs
         else:
             time_s = self.normalize_time(arr[:, time_idx])
 
         channels = {}
+        blocked_exact = {"segment_id", "sample", "time_us", "time_ms", "time_s", "pc_time_s", "timestamp", "counter", "packet"}
+        blocked_contains = ["time", "timestamp", "sample", "index", "packet", "counter", "marker", "event", "segment"]
+
         for i, name in enumerate(headers):
             if i == time_idx:
                 continue
-            lname = name.lower()
-            if any(k in lname for k in ["time", "timestamp", "sample", "index", "packet", "counter", "marker", "event"]):
+            lname = name.lower().strip()
+            lname_compact = lname.replace(" ", "").replace("-", "_")
+            if lname_compact in blocked_exact:
                 continue
+            if any(k in lname_compact for k in blocked_contains):
+                continue
+
             col = arr[:, i].astype(float)
             good = np.isfinite(col)
             if np.count_nonzero(good) < 5:
@@ -358,15 +433,49 @@ class ECGVisualHRVPanel(QWidget):
             if np.nanmax(col) - np.nanmin(col) <= 1e-12:
                 continue
             channels[name] = col
-        return time_s, channels
+
+        return time_s, channels, metadata
+
 
     def find_time_column(self, headers, arr):
-        for i, h in enumerate(headers):
-            lname = h.lower().strip()
-            if any(k == lname or k in lname for k in ["time", "timestamp", "time_s", "time_ms", "seconds", "sec", "ms"]):
+        # Prefer device time over PC time. pc_time_s is fallback only.
+        lowered = [h.lower().strip() for h in headers]
+
+        priority_exact = [
+            "time_us",
+            "device_time_us",
+            "time_s",
+            "device_time_s",
+            "time_ms",
+            "device_time_ms",
+        ]
+        for want in priority_exact:
+            for i, lname in enumerate(lowered):
+                if lname == want:
+                    col = arr[:, i]
+                    if np.count_nonzero(np.isfinite(col)) > 5:
+                        return i
+
+        for i, lname in enumerate(lowered):
+            if "time_us" in lname or "device_time" in lname:
                 col = arr[:, i]
                 if np.count_nonzero(np.isfinite(col)) > 5:
                     return i
+
+        for i, lname in enumerate(lowered):
+            if "pc_time" in lname:
+                continue
+            if any(k == lname or k in lname for k in ["time", "timestamp", "seconds", "sec", "ms"]):
+                col = arr[:, i]
+                if np.count_nonzero(np.isfinite(col)) > 5:
+                    return i
+
+        for i, lname in enumerate(lowered):
+            if "pc_time" in lname:
+                col = arr[:, i]
+                if np.count_nonzero(np.isfinite(col)) > 5:
+                    return i
+
         return None
 
     def normalize_time(self, raw):
@@ -486,7 +595,8 @@ class ECGVisualHRVPanel(QWidget):
 
     def build_interval_rows(self):
         rows = []
-        peaks = self.complete_peaks
+        peaks = np.asarray(self.r_peaks, dtype=int)
+        complete_set = set(int(p) for p in np.asarray(self.complete_peaks, dtype=int))
         for i in range(len(peaks) - 1):
             a = int(peaks[i])
             b = int(peaks[i + 1])
@@ -495,17 +605,24 @@ class ECGVisualHRVPanel(QWidget):
             rr = (tb - ta) * 1000.0
             hr = 60000.0 / rr if rr > 0 else np.nan
             accepted = bool(np.isfinite(rr) and 300.0 <= rr <= 2000.0)
+
+            edge_note = ""
+            if a not in complete_set or b not in complete_set:
+                edge_note = "; edge morphology incomplete"
+
             rows.append({
                 "id": i + 1,
                 "a_peak": a,
                 "b_peak": b,
+                "a_morphology_complete": a in complete_set,
+                "b_morphology_complete": b in complete_set,
                 "a_time_s": ta,
                 "b_time_s": tb,
                 "mid_time_s": (ta + tb) / 2.0,
                 "rr_ms": rr,
                 "hr_bpm": hr,
                 "accepted": accepted,
-                "reason": "basic accepted" if accepted else "outside basic NN range",
+                "reason": ("basic accepted" if accepted else "outside basic NN range") + edge_note,
             })
         return rows
 
@@ -563,12 +680,18 @@ class ECGVisualHRVPanel(QWidget):
     # ------------------------------------------------------------------
     # Source selection and animation
     # ------------------------------------------------------------------
+
     def status_text(self):
         if not self.csv_path:
-            return "Load an ECG CSV to begin."
+            return "Load an ECG recording to begin."
+        source = Path(self.csv_path).name
+        if isinstance(getattr(self, "recording_metadata", None), dict):
+            raw_member = self.recording_metadata.get("_opl_raw_member")
+            if raw_member:
+                source = f"{source} / {raw_member}"
         return (
-            f"{Path(self.csv_path).name} | {self.channel_name} | fs {self.fs:.1f} Hz | "
-            f"R {len(self.r_peaks)} | complete {len(self.complete_peaks)} | "
+            f"{source} | {self.channel_name} | fs {self.fs:.1f} Hz | "
+            f"R {len(self.r_peaks)} | morphology complete {len(self.complete_peaks)} | "
             f"RR {len(self.interval_rows)} | NN {len(self.nn_rows)}"
         )
 
@@ -731,7 +854,7 @@ class ECGVisualHRVPanel(QWidget):
         self.ecg_plot.setTitle("ECG source: highlighted R-to-R interval(s) feed the selected HRV calculation")
 
         # visible R peaks
-        for p in self.complete_peaks:
+        for p in self.r_peaks:
             t = float(self.time_s[int(p)])
             if x0 <= t <= x1:
                 self.ecg_plot.addItem(pg.InfiniteLine(pos=t, angle=90, pen=pg.mkPen((60, 160, 180, 75), width=1)))

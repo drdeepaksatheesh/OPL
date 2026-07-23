@@ -110,30 +110,97 @@ def _read_numeric_csv(path):
     if arr.ndim != 2 or arr.shape[0] < 5:
         raise ValueError("CSV has too few numeric rows")
 
+    # Canonical OPL time selection.
+    #
+    # Important bug fixed here:
+    # Older RR/NN and Triplets loaders treated a column named "sample" as a
+    # generic time column. Since sample increments by 1, _normalize_time_column()
+    # interpreted it as milliseconds and produced fs ~1000 Hz for a 500 Hz file.
+    #
+    # Correct priority:
+    # 1. sample_time_s / device seconds
+    # 2. time_us / device microseconds
+    # 3. time_ms / device milliseconds
+    # 4. sample number converted using default_fs = 500 Hz
+    # 5. row index / 500 Hz fallback
+    lowered = [str(h).strip().lower() for h in header]
     time_idx = None
-    for i, h in enumerate(header):
-        if _looks_like_time_name(h):
-            col = arr[:, i]
+    time_s = None
+
+    def finite_good(col):
+        try:
             finite = np.isfinite(col)
-            if np.sum(finite) > 5:
-                dif = np.diff(col[finite])
-                if np.nanmedian(dif) > 0:
-                    time_idx = i
+            if int(np.sum(finite)) <= 5:
+                return False
+            dif = np.diff(col[finite])
+            return len(dif) > 0 and float(np.nanmedian(dif)) > 0
+        except Exception:
+            return False
+
+    for want in ["sample_time_s", "time_s", "device_time_s", "t_s"]:
+        if want in lowered:
+            idx = lowered.index(want)
+            col = arr[:, idx].astype(float)
+            if finite_good(col):
+                time_idx = idx
+                time_s = col - np.nanmin(col[np.isfinite(col)])
+                break
+
+    if time_s is None:
+        for want in ["time_us", "device_time_us", "t_us"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    time_s = (col - np.nanmin(col[np.isfinite(col)])) / 1_000_000.0
                     break
 
-    if time_idx is None:
-        col = arr[:, 0]
-        finite = np.isfinite(col)
-        if np.sum(finite) > 5:
-            dif = np.diff(col[finite])
-            if len(dif) and np.nanmedian(dif) > 0:
-                if np.nanmax(col) - np.nanmin(col) > arr.shape[0] * 0.2:
-                    time_idx = 0
+    if time_s is None:
+        for want in ["time_ms", "device_time_ms", "t_ms"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    time_s = (col - np.nanmin(col[np.isfinite(col)])) / 1000.0
+                    break
 
-    if time_idx is not None:
-        time_s = _normalize_time_column(arr[:, time_idx])
-    else:
+    if time_s is None:
+        for want in ["sample", "sample_index", "sample_number"]:
+            if want in lowered:
+                idx = lowered.index(want)
+                col = arr[:, idx].astype(float)
+                if finite_good(col):
+                    time_idx = idx
+                    first = np.nanmin(col[np.isfinite(col)])
+                    time_s = (col - first) / 500.0
+                    break
+
+    if time_s is None:
         time_s = np.arange(arr.shape[0], dtype=float) / 500.0
+
+    non_signal_names = {
+        "segment_id",
+        "segment",
+        "sample",
+        "sample_index",
+        "sample_number",
+        "time",
+        "timestamp",
+        "sample_time_s",
+        "time_s",
+        "device_time_s",
+        "t_s",
+        "time_us",
+        "device_time_us",
+        "t_us",
+        "time_ms",
+        "device_time_ms",
+        "t_ms",
+        "pc_time_s",
+        "pc_time",
+    }
 
     channels = {}
     for i, h in enumerate(header):
@@ -226,7 +293,8 @@ class ECGRRTripletsPanel(QWidget):
         self.raw_signal = None
         self.filtered_signal = None
         self.r_peaks = np.asarray([], dtype=int)
-        self.complete_peaks = np.asarray([], dtype=int)
+        self.complete_peaks = np.asarray([], dtype=int)  # morphology-complete beats
+        self.rr_peaks = np.asarray([], dtype=int)        # HRV/RR timing source
         self.triplet_index = 0
         self.pre_r_s = 0.25
         self.post_r_s = 0.55
@@ -381,8 +449,20 @@ class ECGRRTripletsPanel(QWidget):
             return (float(r1_t) + float(r3_t)) / 2.0
         return float(r2_t)
 
+    def rr_peak_array(self):
+        try:
+            peaks = np.asarray(getattr(self, "rr_peaks", self.r_peaks), dtype=int)
+            if len(peaks):
+                return peaks
+        except Exception:
+            pass
+        try:
+            return np.asarray(self.r_peaks, dtype=int)
+        except Exception:
+            return np.asarray([], dtype=int)
+
     def triplet_count(self):
-        return max(0, len(self.complete_peaks) - 2)
+        return max(0, len(self.rr_peak_array()) - 2)
 
     def load_csv_dialog(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load raw ECG CSV", "", "CSV files (*.csv);;All files (*.*)")
@@ -435,12 +515,17 @@ class ECGRRTripletsPanel(QWidget):
 
         self.r_peaks = np.asarray(self.r_peaks, dtype=int)
         self.complete_peaks = np.asarray(self.complete_peaks, dtype=int)
+        self.rr_peaks = np.asarray(self.r_peaks, dtype=int)
         self.triplet_index = max(0, min(self.triplet_index, self.triplet_count() - 1))
         self.update_triplet_box_items()
         self.set_keyboard_target("View")
         self.update_y_range()
         fs = safe_sampling_rate(self.time_s)
-        self.status_label.setText(f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | complete {len(self.complete_peaks)} | triplets {self.triplet_count()}")
+        morphology_edge = max(0, len(self.r_peaks) - len(self.complete_peaks))
+        self.status_label.setText(
+            f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | morphology complete {len(self.complete_peaks)} | "
+            f"triplets {self.triplet_count()} | edge morphology {morphology_edge}"
+        )
         self.refresh_plot()
 
     def robust_y_range_from_arrays(self, arrays, min_span=250.0):
@@ -595,13 +680,14 @@ class ECGRRTripletsPanel(QWidget):
         self.status_label.setText(f"{base} | keyboard: {target} ({detail})")
 
     def triplet_times(self, index):
-        peaks = self.complete_peaks
-        a, b, c = int(peaks[index]), int(peaks[index + 1]), int(peaks[index + 2])
+        peaks = self.rr_peak_array()
+        i = max(0, min(int(index), max(0, len(peaks) - 3)))
+        a, b, c = int(peaks[i]), int(peaks[i + 1]), int(peaks[i + 2])
         return a, b, c, float(self.time_s[a]), float(self.time_s[b]), float(self.time_s[c])
 
     def triplet_grid(self):
         try:
-            r_times = self.time_s[np.asarray(self.complete_peaks, dtype=int)]
+            r_times = self.time_s[np.asarray(self.rr_peak_array(), dtype=int)]
             rr = np.diff(r_times)
             rr = rr[np.isfinite(rr) & (rr > 0)]
             med = float(np.nanmedian(rr)) if len(rr) else 0.75
@@ -871,7 +957,7 @@ class ECGRRTripletsPanel(QWidget):
             "- In Raw / Filtered triplet, Triplet target Up/Down changes triplet.",
             "",
             "Triplet meaning:",
-            "- Triplet 1 = complexes 1, 2, 3.",
+            "- Triplet 1 = R peaks 1, 2, 3.",
             "- RR-pre = A→B.",
             "- RR-post = B→C.",
             "- ΔRR = RR-post - RR-pre.",
@@ -883,8 +969,8 @@ class ECGRRTripletsPanel(QWidget):
             "Method",
             "",
             "- R peaks are detected from the shared ECG review-style filtered signal.",
-            "- Complete complexes are used to build triplets.",
-            "- Triplet n contains complexes n, n+1 and n+2.",
+            "- Consecutive detected R peaks are used to build RR triplets.",
+            "- Triplet n contains R peaks n, n+1 and n+2.",
             "- This is the visual bridge to RMSSD, pNN50 and Poincaré.",
             "- Mean / median examples are real recorded triplets nearest to the mean or median RR-pre/RR-post point.",
             "- Cyan = smallest |ΔRR| triplet.",
@@ -909,7 +995,7 @@ class ECGRRTripletsPanel(QWidget):
             "Triplet Measurements",
             "",
             f"Selected triplet: {i + 1}/{self.triplet_count()}",
-            f"Complexes shown: {i + 1}, {i + 2}, {i + 3}",
+            f"R peaks shown: {i + 1}, {i + 2}, {i + 3}",
             f"View: {self.current_view_name()}",
             f"Reference: {self.current_reference_label()}",
             "",
@@ -927,6 +1013,6 @@ class ECGRRTripletsPanel(QWidget):
             *self.key_triplet_summary_text(),
             "",
             f"Detected R peaks: {len(self.r_peaks)}",
-            f"Complete complexes: {len(self.complete_peaks)}",
+            f"Morphology-complete beats: {len(self.complete_peaks)}",
         ]
         self.measurements_box.setPlainText("\n".join(txt))

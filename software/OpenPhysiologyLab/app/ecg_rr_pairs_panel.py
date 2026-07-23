@@ -79,7 +79,8 @@ class ECGRRPairsPanel(QWidget):
 
         self.filtered: Optional[np.ndarray] = None
         self.r_peaks: np.ndarray = np.array([], dtype=int)
-        self.complete_peaks: np.ndarray = np.array([], dtype=int)
+        self.complete_peaks: np.ndarray = np.array([], dtype=int)  # morphology-complete beats
+        self.rr_peaks: np.ndarray = np.array([], dtype=int)        # HRV/RR timing source
 
         self.pair_index: int = 0
 
@@ -488,6 +489,13 @@ class ECGRRPairsPanel(QWidget):
             post_r_s=self.post_r_s,
         )
 
+        # Guideline-consistent split:
+        # - r_peaks / rr_peaks are the RR timing source.
+        # - complete_peaks are only the morphology/PQRST-complete subset.
+        self.r_peaks = np.asarray(self.r_peaks, dtype=int)
+        self.complete_peaks = np.asarray(self.complete_peaks, dtype=int)
+        self.rr_peaks = np.asarray(self.r_peaks, dtype=int)
+
         self.update_fixed_plot_scales(raw)
 
         if self.pair_count() > 0:
@@ -498,30 +506,54 @@ class ECGRRPairsPanel(QWidget):
         self.update_complex_box_items()
         self.set_keyboard_target("View")
 
-        rejected = len(self.r_peaks) - len(self.complete_peaks)
+        morphology_edge = max(0, len(self.r_peaks) - len(self.complete_peaks))
         fs = safe_sampling_rate(self.time_s)
 
         rr_warning = ""
         try:
-            if len(self.complete_peaks) >= 2:
-                rr0_ms = (float(self.time_s[int(self.complete_peaks[1])]) - float(self.time_s[int(self.complete_peaks[0])])) * 1000.0
+            peaks = self.rr_peak_array()
+            if len(peaks) >= 2:
+                rr0_ms = (float(self.time_s[int(peaks[1])]) - float(self.time_s[int(peaks[0])])) * 1000.0
                 if rr0_ms > 3000.0:
                     rr_warning = " | check time units"
         except Exception:
             pass
 
         self.status_label.setText(
-            f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | complete {len(self.complete_peaks)} | rejected {rejected}{rr_warning}"
+            f"fs {fs:.1f} Hz | R {len(self.r_peaks)} | morphology complete {len(self.complete_peaks)} | "
+            f"RR pairs {self.pair_count()} | edge morphology {morphology_edge}{rr_warning}"
         )
         self.update_keyboard_target_status()
         self.refresh_plot()
 
     def pair_count(self) -> int:
-        return pair_count_from_complete_peaks(self.complete_peaks)
+        return max(0, len(self.rr_peak_array()) - 1)
 
-    # ------------------------------------------------------------------
-    # Navigation and plotting
-    # ------------------------------------------------------------------
+    def rr_peak_array(self):
+        # RR/HRV timing source. R peaks at the recording edges remain valid for
+        # RR intervals even if the full P-QRS-T morphology window is incomplete.
+        try:
+            peaks = np.asarray(getattr(self, "rr_peaks", self.r_peaks), dtype=int)
+            if len(peaks):
+                return peaks
+        except Exception:
+            pass
+        try:
+            return np.asarray(self.r_peaks, dtype=int)
+        except Exception:
+            return np.asarray([], dtype=int)
+
+    def rr_pair_indices(self, index: int):
+        peaks = self.rr_peak_array()
+        i = max(0, min(int(index), max(0, len(peaks) - 2)))
+        return int(peaks[i]), int(peaks[i + 1])
+
+    def morphology_complete_peak_set(self):
+        try:
+            return set(int(p) for p in np.asarray(self.complete_peaks, dtype=int))
+        except Exception:
+            return set()
+
     def reset_current_view(self):
         # Reset the currently selected RR Pairs view to its standard axes.
         try:
@@ -583,7 +615,7 @@ class ECGRRPairsPanel(QWidget):
             return
 
         if self.pair_count() <= 0:
-            self.plot.setTitle("Need at least two complete ECG complexes")
+            self.plot.setTitle("Need at least two R peaks")
             self.update_right_panels()
             return
 
@@ -626,10 +658,10 @@ class ECGRRPairsPanel(QWidget):
         # Stable coordinate system for the loaded recording.
         # Y ranges are computed per view, like ECG Calipers, not per beat.
         try:
-            if self.time_s is None or len(self.complete_peaks) < 2:
+            if self.time_s is None or len(self.rr_peak_array()) < 2:
                 self.axis_rr_s = 0.80
             else:
-                r_times = self.time_s[np.asarray(self.complete_peaks, dtype=int)]
+                r_times = self.time_s[np.asarray(self.rr_peak_array(), dtype=int)]
                 rr_s = np.diff(r_times)
                 rr_s = rr_s[np.isfinite(rr_s) & (rr_s > 0)]
                 if len(rr_s):
@@ -650,9 +682,9 @@ class ECGRRPairsPanel(QWidget):
             try:
                 t = self.time_s
                 sig = np.asarray(signal, dtype=float)
-                if t is not None and len(self.complete_peaks) >= 2:
+                if t is not None and len(self.rr_peak_array()) >= 2:
                     for i in range(min(self.pair_count(), 250)):
-                        r1, r2 = pair_indices(i, self.complete_peaks)
+                        r1, r2 = self.rr_pair_indices(i)
                         start_t, end_t = pair_time_window(t, r1, r2, self.pre_r_s, self.post_r_s)
                         mask = (t >= start_t) & (t <= end_t)
                         y = sig[mask]
@@ -810,7 +842,7 @@ class ECGRRPairsPanel(QWidget):
         signal = np.asarray(self.filtered, dtype=float)
         t = self.time_s
         i = self.pair_index
-        r1, r2 = pair_indices(i, self.complete_peaks)
+        r1, r2 = self.rr_pair_indices(i)
         r1_t = float(t[r1])
         r2_t = float(t[r2])
         rr_s = r2_t - r1_t
@@ -877,7 +909,7 @@ class ECGRRPairsPanel(QWidget):
     def ab_pair_grid(self):
         # Common x grid for AB-pair overlays using the selected Reference.
         try:
-            r_times = self.time_s[np.asarray(self.complete_peaks, dtype=int)]
+            r_times = self.time_s[np.asarray(self.rr_peak_array(), dtype=int)]
             rr_s = np.diff(r_times)
             rr_s = rr_s[np.isfinite(rr_s) & (rr_s > 0)]
             med_rr = float(np.nanmedian(rr_s)) if len(rr_s) else float(getattr(self, 'axis_rr_s', 0.80))
@@ -914,7 +946,7 @@ class ECGRRPairsPanel(QWidget):
         Samples outside that specific pair's A-pre to B-post window are set
         to NaN, so neighbouring complexes are not plotted.
         """
-        if self.time_s is None or len(self.complete_peaks) < 2:
+        if self.time_s is None or len(self.rr_peak_array()) < 2:
             return None, []
 
         signal = np.asarray(self.filtered if self.filtered is not None else self.channels[self.channel_name], dtype=float)
@@ -924,7 +956,7 @@ class ECGRRPairsPanel(QWidget):
 
         for i in range(self.pair_count()):
             try:
-                r1, r2 = pair_indices(i, self.complete_peaks)
+                r1, r2 = self.rr_pair_indices(i)
                 r1_t = float(t[r1])
                 r2_t = float(t[r2])
                 rr_s = r2_t - r1_t
@@ -1044,7 +1076,7 @@ class ECGRRPairsPanel(QWidget):
     def plot_ab_overlap(self):
         x_grid, traces = self.collect_filtered_ab_pair_traces()
         if x_grid is None or not traces:
-            self.plot.setTitle('No complete filtered AB pairs available')
+            self.plot.setTitle('No RR-timing AB pairs available')
             return
 
         selection = self.current_complex_selection()
@@ -1158,7 +1190,7 @@ class ECGRRPairsPanel(QWidget):
     def plot_key_ab_complexes(self):
         x_grid, traces = self.collect_filtered_ab_pair_traces()
         if x_grid is None or not traces:
-            self.plot.setTitle('No complete filtered AB pairs available')
+            self.plot.setTitle('No RR-timing AB pairs available')
             return
         keys = self.rr_key_ab_traces(traces)
         shortest = keys.get('shortest')
@@ -1210,7 +1242,7 @@ class ECGRRPairsPanel(QWidget):
         t = self.time_s
 
         i = self.pair_index
-        r1, r2 = pair_indices(i, self.complete_peaks)
+        r1, r2 = self.rr_pair_indices(i)
         r1_t = float(t[r1])
         r2_t = float(t[r2])
         rr_s = r2_t - r1_t
@@ -1285,35 +1317,41 @@ class ECGRRPairsPanel(QWidget):
             return (
                 "Pair Measurements\n\n"
                 f"Detected R peaks: {len(self.r_peaks)}\n"
-                f"Complete complexes: {len(self.complete_peaks)}\n"
-                "Need at least two complete complexes."
+                f"Morphology-complete beats: {len(self.complete_peaks)}\n"
+                "Need at least two R peaks for an RR interval."
             )
 
         i = self.pair_index
-        r1, r2 = pair_indices(i, self.complete_peaks)
+        r1, r2 = self.rr_pair_indices(i)
         r1_t = float(self.time_s[r1])
         r2_t = float(self.time_s[r2])
         rr_ms = (r2_t - r1_t) * 1000.0
         hr = 60000.0 / rr_ms if rr_ms > 0 else np.nan
-        rejected = len(self.r_peaks) - len(self.complete_peaks)
+        morphology_edge = max(0, len(self.r_peaks) - len(self.complete_peaks))
         ref_t, ref_label = self.current_reference_time(r1_t, r2_t)
+
+        complete_set = self.morphology_complete_peak_set()
+        edge_note = "no"
+        if int(r1) not in complete_set or int(r2) not in complete_set:
+            edge_note = "yes; RR timing usable, PQRST context incomplete"
 
         return "\n".join([
             "Pair Measurements",
             "",
-            f"Selected pair: {i + 1}/{self.pair_count()}",
-            f"Complexes shown: {i + 1} and {i + 2}",
+            f"Selected RR pair: {i + 1}/{self.pair_count()}",
+            f"R peaks shown: {i + 1} and {i + 2}",
             f"View: {self.current_view_name()}",
             f"Reference: {ref_label}",
             f"RR interval: {rr_ms:.1f} ms",
             f"Instant HR: {hr:.1f} bpm" if np.isfinite(hr) else "Instant HR: --",
             "",
             f"Detected R peaks: {len(self.r_peaks)}",
-            f"Complete complexes: {len(self.complete_peaks)}",
-            f"Rejected partial/edge complexes: {rejected}",
+            f"Morphology-complete beats: {len(self.complete_peaks)}",
+            f"Edge morphology incomplete: {morphology_edge}",
+            f"Selected pair edge note: {edge_note}",
             "",
-            f"Complex {i + 1} R time: {r1_t:.3f} s",
-            f"Complex {i + 2} R time: {r2_t:.3f} s",
+            f"R peak {i + 1} time: {r1_t:.3f} s",
+            f"R peak {i + 2} time: {r2_t:.3f} s",
         ])
 
     def navigation_text(self) -> str:
@@ -1348,9 +1386,14 @@ class ECGRRPairsPanel(QWidget):
             "- Left/Right changes keyboard target; Up/Down changes selected option.",
             "- R peaks are detected using the shared ECG review helper.",
             "- Detection is done on an internal filtered copy.",
-            "- Raw pair shows the selected pair without morphology filtering.",
-            "- Filtered pair shows the same selected pair after the ECG review filter.",
-            "- AB overlap shows filtered pair waveforms: AB1, AB2, AB3...",
+            "- RR pairs are built from consecutive detected R peaks.",
+            "- This follows the HRV rule: RR/NN timing depends on R-to-R intervals, not on full PQRST visibility.",
+            "- Morphology-complete beats are still counted separately for PQRST/average-beat teaching.",
+            f"- Morphology rule: {self.pre_r_s:.2f} s before R and {self.post_r_s:.2f} s after R.",
+            "- A first/last R peak can be used for RR timing even if its full morphology window is incomplete.",
+            "- Raw pair shows the selected RR interval without morphology filtering.",
+            "- Filtered pair shows the same selected RR interval after the ECG review filter.",
+            "- AB overlap shows filtered RR-pair waveforms: AB1, AB2, AB3...",
             "- Mean / median / min / max uses real recorded AB pairs selected by RR duration, not waveform-shape averaging.",
             "- White = nearest mean-RR AB pair; purple = nearest median-RR AB pair.",
             "- Reference selector changes AB overlap alignment: midpoint, A-R, or B-R.",
@@ -1359,10 +1402,6 @@ class ECGRRPairsPanel(QWidget):
             "- Mean / median / min / max: representative, shortest-RR and longest-RR real AB pairs are emphasized.",
             "- AB1...ABn: one selected AB pair is emphasized.",
             "- Key AB complexes shows nearest-mean-RR, nearest-median-RR, shortest-RR, and longest-RR AB pairs only.",
-            "- A complex is accepted only if full PQRST context exists.",
-            f"- Complete-complex rule: {self.pre_r_s:.2f} s before R and {self.post_r_s:.2f} s after R.",
-            "- Partial first/last complexes are rejected before numbering.",
-            "- Consecutive accepted complexes create the pairs.",
             "- The X and Y coordinate ranges are locked for the loaded recording.",
             "- This prevents the graph from jumping when moving pair-to-pair.",
             "- Reference modes:",
@@ -1370,3 +1409,4 @@ class ECGRRPairsPanel(QWidget):
             "  2. Complex A R = 0",
             "  3. Complex B R = 0",
         ])
+
