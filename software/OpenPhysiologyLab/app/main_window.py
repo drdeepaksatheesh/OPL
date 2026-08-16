@@ -18,6 +18,7 @@ from app.ecg_rr_pairs_panel import ECGRRPairsPanel
 from app.ecg_rr_triplets_panel import ECGRRTripletsPanel
 from app.ecg_rr_nn_table_panel import ECGRRNNTablePanel
 from app.ecg_visual_hrv_panel import ECGVisualHRVPanel
+from app.opl_4d_cardiac_anatomy_panel import OPL4DCardiacAnatomyPanel
 from app.theme import build_stylesheet
 
 
@@ -39,6 +40,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.results_panel = ResultsPanel()
         self.compare_panel = ComparePanel()
         self.ecg_calipers_panel = ECGCalipersPanel()
+        self.cardiac_anatomy_panel = OPL4DCardiacAnatomyPanel()
         try:
             self.analysis_panel.open_results_requested.connect(self.open_results_report)
         except Exception:
@@ -49,6 +51,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
         self.tabs.addTab(self.setup_panel, "Setup")
         self.tabs.addTab(self.recorder_panel, "Recorder")
         self.tabs.addTab(self.ecg_calipers_panel, "ECG Calipers")
+        self.tabs.addTab(self.cardiac_anatomy_panel, "4D Cardiac Anatomy")
         self.tabs.addTab(ECGRRPairsPanel(), "RR Pairs")
         self.tabs.addTab(ECGRRTripletsPanel(), "RR Triplets")
         self.tabs.addTab(ECGRRNNTablePanel(), "RR / NN Table")
@@ -60,7 +63,7 @@ class OpenPhysiologyLabMainWindow(QMainWindow):
 
         # OPL_FIRST_RELEASE_VISIBLE_TABS
         # Keep the ECG -> HRV teaching workflow visible; hide unfinished later tabs.
-        _opl_visible_tabs = ['Setup', 'Recorder', 'ECG Calipers', 'RR Pairs', 'RR Triplets', 'RR / NN Table', 'Visual HRV']
+        _opl_visible_tabs = ['Setup', 'Recorder', 'ECG Calipers', '4D Cardiac Anatomy', 'RR Pairs', 'RR Triplets', 'RR / NN Table', 'Visual HRV']
         _opl_visible_set = set(_opl_visible_tabs)
         try:
             for _opl_i in range(self.tabs.count() - 1, -1, -1):
