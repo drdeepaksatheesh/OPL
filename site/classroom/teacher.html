@@ -50,6 +50,13 @@
           <button data-phase="post">Post-test</button>
           <button data-phase="closed">Close</button>
         </div>
+        <div class="row" style="margin-top:10px">
+          <label class="file-picker">
+            Load questionnaire JSON
+            <input id="questionnaireFile" type="file" accept=".json,application/json">
+          </label>
+          <span class="muted" id="questionnaireStatus">Default ECG questionnaire</span>
+        </div>
         <p class="muted" id="phaseStatus"></p>
       </section>
 
