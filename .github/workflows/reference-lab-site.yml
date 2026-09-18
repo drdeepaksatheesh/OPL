@@ -79,29 +79,25 @@ jobs:
 
   windows-launcher-smoke:
     runs-on: windows-latest
-    timeout-minutes: 10
+    needs: build-reference-lab
+    timeout-minutes: 5
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download the exact built Reference Lab artifact
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
-
-      - name: Install ECG-ID build dependency
-        run: python -m pip install --upgrade "wfdb>=4.1,<5"
-
-      - name: Prepare reference record
-        run: python scripts/prepare_ecgid_reference.py --person Person_01 --record rec_1
+          name: opl-reference-lab-static
+          path: artifact
 
       - name: Start Windows-native OPL server and smoke-test
         shell: powershell
         run: |
+          $site = Resolve-Path 'artifact/opl-site'
+          $serverScript = Join-Path $site 'local_server.ps1'
+
           $server = Start-Process powershell.exe -ArgumentList @(
             '-NoProfile',
             '-ExecutionPolicy', 'Bypass',
-            '-File', (Resolve-Path 'site/local_server.ps1'),
+            '-File', $serverScript,
             '-StartPort', '8765',
             '-NoBrowser'
           ) -PassThru -WindowStyle Hidden
@@ -133,7 +129,11 @@ jobs:
               throw 'Served reference record did not preserve expected source metadata.'
             }
 
-            Write-Host 'Windows launcher/server smoke test passed.'
+            if (-not (Test-Path (Join-Path $site 'START_OPL_REFERENCE_LAB.cmd'))) {
+              throw 'One-click Windows launcher missing from built artifact.'
+            }
+
+            Write-Host 'Windows artifact launcher/server smoke test passed.'
           }
           finally {
             if ($server -and -not $server.HasExited) {
