@@ -17,6 +17,7 @@ const SESSION_KEY = "opl:ecg-reference:session:" + RECORD_ID;
 const state = {
   record: null,
   sourceManifest: null,
+  buildInfo: null,
   baseline: 0,
   calipers: {a: null, b: null},
   nextCaliper: "a",
@@ -48,6 +49,12 @@ async function boot() {
     state.sourceManifest = await fetch("./manifest.json").then(requireOk).then(r => r.json());
   } catch {
     state.sourceManifest = null;
+  }
+
+  try {
+    state.buildInfo = await fetch("../../build-info.json").then(requireOk).then(r => r.json());
+  } catch {
+    state.buildInfo = null;
   }
 
   let record = null;
@@ -137,7 +144,8 @@ function bindEvents() {
       record: state.record,
       baseline: state.baseline,
       calipers: state.calipers,
-      oplVersion: window.OPL_CONFIG?.version
+      oplVersion: window.OPL_CONFIG?.version,
+      oplCommit: state.buildInfo?.git_sha
     });
     downloadJson("OPL_ECG-ID_Person_01_rec_1_reference-package.json", pkg);
     showStatus("Downloaded a self-contained OPL Reference Package with waveform, provenance and current measurements.");
@@ -196,7 +204,8 @@ function renderProvenance() {
     ["Record", state.record?.record_id || "Person_01 / rec_1"],
     ["Sampling", state.record ? state.record.sampling_rate_hz + " Hz" : "500 Hz"],
     ["Acquisition", state.record ? state.record.adc?.resolution_bits + "-bit" : "12-bit"],
-    ["OPL processing", "None until a user-selected operation is applied"]
+    ["OPL processing", "None until a user-selected operation is applied"],
+    ["OPL build", state.buildInfo?.git_sha ? state.buildInfo.git_sha.slice(0, 12) : "development source"]
   ];
 
   el.provenanceGrid.innerHTML = values.map(([label,value]) => {
