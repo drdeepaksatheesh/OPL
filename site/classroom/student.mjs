@@ -88,6 +88,7 @@ async function refresh(){
   try{
     const payload=await api("./api/student/state?participant_id="+encodeURIComponent(participantId));
     state=payload.state;
+    if(state.questionnaire_definition) questionnaire=state.questionnaire_definition;
     el.connectionBadge.textContent="Connected";
     el.sessionTitle.textContent=state.title||"OPL Classroom";
     el.participantDisplay.textContent=participantLabel||participantId.slice(0,8);
