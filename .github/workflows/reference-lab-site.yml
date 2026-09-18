@@ -1,0 +1,259 @@
+name: Reference Lab site
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/prepare_ecgid_reference.py"
+      - "scripts/prepare_ludb_clean_reference.py"
+      - "scripts/verify_ludb_clean_reference.py"
+      - "scripts/verify_ecgid_reference.py"
+      - "scripts/build_reference_site.py"
+      - "scripts/build_paper1_ecg_app.py"
+      - ".github/workflows/reference-lab-site.yml"
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/prepare_ecgid_reference.py"
+      - "scripts/prepare_ludb_clean_reference.py"
+      - "scripts/verify_ludb_clean_reference.py"
+      - "scripts/verify_ecgid_reference.py"
+      - "scripts/build_reference_site.py"
+      - "scripts/build_paper1_ecg_app.py"
+      - ".github/workflows/reference-lab-site.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: reference-lab-site-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-reference-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install reference-build dependencies
+        run: python -m pip install --upgrade "wfdb>=4.1,<5" "scipy>=1.11,<2" "Pillow>=10,<12"
+
+      - name: Fetch frozen ECG-ID reference record
+        run: python scripts/prepare_ecgid_reference.py --person Person_01 --record rec_1
+
+      - name: Verify source-derived reference package
+        run: python scripts/verify_ecgid_reference.py
+
+      - name: Select and prepare clean real LUDB Lead-II reference
+        run: python scripts/prepare_ludb_clean_reference.py
+
+      - name: Verify clean LUDB selection
+        run: python scripts/verify_ludb_clean_reference.py
+
+      - name: Run Reference Lab calculation, validation and teaching tests
+        run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/ideal-ecg.test.mjs site/tests/teaching.test.mjs
+
+      - name: Build offline-capable static site
+        run: python scripts/build_reference_site.py
+
+      - name: Build clean Paper 1 ECG app
+        run: python scripts/build_paper1_ecg_app.py
+
+      - name: Confirm key build outputs
+        run: |
+          test -f build/opl-site/reference/ecg-id/data/Person_01_rec_1.json
+          test -f build/opl-site/reference/ecg-id/data/LUDB_clean_LeadII.json
+          test -f build/opl-site/reference/ecg-id/data/LUDB_clean_selection.json
+          test -f build/opl-site/icons/icon-192.png
+          test -f build/opl-site/icons/icon-512.png
+          test -f build/opl-reference-lab-static.zip
+          test -f build/OPL_ECG_Reference_Lab_Paper1.zip
+          test -f build/opl-ecg-reference-lab-paper1/PAPER1_TEST_ME_FIRST.txt
+          test ! -e build/opl-ecg-reference-lab-paper1/classroom
+          test ! -e build/opl-ecg-reference-lab-paper1/START_OPL_CLASSROOM.cmd
+
+      - name: Upload downloadable Reference Lab build
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: |
+            build/opl-site
+            build/opl-reference-lab-static.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload clean Paper 1 ECG app
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-ecg-reference-lab-paper1
+          path: |
+            build/opl-ecg-reference-lab-paper1
+            build/OPL_ECG_Reference_Lab_Paper1.zip
+          if-no-files-found: error
+          retention-days: 30
+
+
+  windows-launcher-smoke:
+    runs-on: windows-latest
+    needs: build-reference-lab
+    timeout-minutes: 5
+    steps:
+      - name: Download the exact built Reference Lab artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: artifact
+
+      - name: Start Windows-native OPL server and smoke-test
+        shell: powershell
+        run: |
+          $site = Resolve-Path 'artifact/opl-site'
+          $serverScript = Join-Path $site 'local_server.ps1'
+
+          $server = Start-Process powershell.exe -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $serverScript,
+            '-StartPort', '8765',
+            '-NoBrowser'
+          ) -PassThru -WindowStyle Hidden
+
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8765/reference/ecg-id/index.html' -TimeoutSec 2
+                if ($response.StatusCode -eq 200 -and $response.Content -match 'ECG Reference Lab') {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+
+            if (-not $ready) {
+              throw 'Windows OPL local server did not become ready.'
+            }
+
+            $record = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8765/reference/ecg-id/data/Person_01_rec_1.json' -TimeoutSec 5
+            if ($record.StatusCode -ne 200) {
+              throw 'Reference record was not served.'
+            }
+            $json = $record.Content | ConvertFrom-Json
+            if ($json.sample_count -ne 10000 -or $json.sampling_rate_hz -ne 500) {
+              throw 'Served reference record did not preserve expected source metadata.'
+            }
+
+            if (-not (Test-Path (Join-Path $site 'START_OPL_REFERENCE_LAB.cmd'))) {
+              throw 'One-click Windows launcher missing from built artifact.'
+            }
+            if (-not (Test-Path (Join-Path $site 'START_OPL_PHONE_TEST.cmd'))) {
+              throw 'Phone-test launcher missing from built artifact.'
+            }
+
+            Write-Host 'Windows local-only launcher/server smoke test passed.'
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
+
+          $lanServer = Start-Process powershell.exe -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $serverScript,
+            '-StartPort', '8766',
+            '-NoBrowser',
+            '-AllowLan'
+          ) -PassThru -WindowStyle Hidden
+
+          try {
+            $lanReady = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $lanResponse = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8766/reference/ecg-id/index.html' -TimeoutSec 2
+                if ($lanResponse.StatusCode -eq 200 -and $lanResponse.Content -match 'ECG Reference Lab') {
+                  $lanReady = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $lanReady) {
+              throw 'Windows LAN-capable OPL server did not become ready.'
+            }
+            Write-Host 'Windows LAN-capable phone-test server smoke test passed.'
+          }
+          finally {
+            if ($lanServer -and -not $lanServer.HasExited) {
+              Stop-Process -Id $lanServer.Id -Force
+            }
+          }
+
+
+  responsive-browser-smoke:
+    runs-on: ubuntu-latest
+    needs: build-reference-lab
+    timeout-minutes: 10
+    steps:
+      - name: Download the exact built Reference Lab artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: artifact
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright test runtime
+        run: |
+          npm init -y
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start static server
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory artifact/opl-site > /tmp/opl-http.log 2>&1 &
+          echo $! > /tmp/opl-http.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8765/reference/ecg-id/index.html >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/opl-http.log
+          exit 1
+
+      - name: Test phone Teaching mode and desktop Advanced mode
+        env:
+          OPL_TEST_URL: http://127.0.0.1:8765
+          OPL_SCREENSHOT_DIR: build/browser-smoke
+        run: node artifact/opl-site/tests/browser-smoke.mjs
+
+      - name: Upload responsive screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-responsive-smoke-screenshots
+          path: build/browser-smoke
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,63 @@
+{
+  "project": "OpenPhysiologyLab",
+  "tagline": "Trusted data. Visible analysis. Understand physiology.",
+  "modules": [
+    {
+      "id": "ecg-reference",
+      "name": "ECG Reference Lab",
+      "area": "Reference physiology",
+      "status": "development",
+      "summary": "Trusted open ECG data made inspectable: raw versus filtered signal, baseline-relative morphology, time/amplitude calipers, annotations and reproducible provenance.",
+      "href": "reference/ecg-id/index.html"
+    },
+    {
+      "id": "visual-hrv",
+      "name": "OPL Visual HRV",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Stepwise visualisation of RR/NN intervals, successive differences, time-domain HRV and Poincaré geometry using reproducible reference data."
+    },
+    {
+      "id": "ppg-pulse-transit",
+      "name": "PPG & Pulse Transit Lab",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Raw PPG morphology, pulse-foot timing, ECG-to-PPG arrival time and site-to-site pulse transit using trusted open recordings."
+    },
+    {
+      "id": "cardiac-chart",
+      "name": "OPL Cardiac Chart",
+      "area": "Integrated physiology",
+      "status": "planned",
+      "summary": "Synchronised electrical and mechanical cardiac events using citable reference physiology."
+    },
+    {
+      "id": "vascular-pulse",
+      "name": "Vascular Pulse Lab",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Central and peripheral pulse morphology and propagation concepts using synchronized open cardiovascular signals."
+    },
+    {
+      "id": "cerebral-doppler",
+      "name": "Cerebral Doppler Lab",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Visual teaching of cerebral flow-velocity waveforms, pulsatility and autoregulation using open reference data."
+    },
+    {
+      "id": "recorder",
+      "name": "OPL Recorder",
+      "area": "Acquisition — later phase",
+      "status": "planned",
+      "summary": "Future live physiological acquisition feeding the same validated Reference Lab interfaces."
+    },
+    {
+      "id": "calibration",
+      "name": "OPL Calibration Bench",
+      "area": "Acquisition — later phase",
+      "status": "planned",
+      "summary": "Future transparent calibration and signal-chain quality control for low-cost acquisition hardware."
+    }
+  ]
+}

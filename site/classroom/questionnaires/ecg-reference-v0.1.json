@@ -1,0 +1,116 @@
+{
+  "schema": "org.openphysiologylab.questionnaire/v1",
+  "id": "ecg-reference-classroom-v0.1",
+  "title": "ECG Reference Lab classroom check",
+  "module": "ecg-reference",
+  "version": "0.1.0",
+  "pre": {
+    "title": "ECG pre-test",
+    "items": [
+      {
+        "id": "pre_sample_time",
+        "concept_id": "sample_time",
+        "type": "single_choice",
+        "prompt": "A 500 Hz ECG has how much time between consecutive samples?",
+        "options": [
+          "0.5 ms",
+          "1 ms",
+          "2 ms",
+          "5 ms"
+        ],
+        "correct": 2,
+        "required": true
+      },
+      {
+        "id": "pre_source_filtered",
+        "concept_id": "source_filtered",
+        "type": "single_choice",
+        "prompt": "In this Reference Lab, “source filtered” means:",
+        "options": [
+          "Filtered by OPL after loading",
+          "A filtered channel supplied by the ECG-ID dataset",
+          "Filtered by the phone browser",
+          "A diagnostic correction"
+        ],
+        "correct": 1,
+        "required": true
+      },
+      {
+        "id": "pre_baseline",
+        "concept_id": "baseline",
+        "type": "single_choice",
+        "prompt": "When measuring a wave vertically, OPL's ΔADC value is referenced to:",
+        "options": [
+          "The top of the graph",
+          "The selected baseline",
+          "The previous R peak",
+          "Zero milliseconds"
+        ],
+        "correct": 1,
+        "required": true
+      }
+    ]
+  },
+  "post": {
+    "title": "ECG post-test",
+    "items": [
+      {
+        "id": "post_sample_time",
+        "concept_id": "sample_time",
+        "type": "single_choice",
+        "prompt": "If two markers are 42 samples apart in a 500 Hz recording, what is their time separation?",
+        "options": [
+          "42 ms",
+          "84 ms",
+          "21 ms",
+          "500 ms"
+        ],
+        "correct": 1,
+        "required": true
+      },
+      {
+        "id": "post_source_filtered",
+        "concept_id": "source_filtered",
+        "type": "single_choice",
+        "prompt": "Why should the raw digital ECG remain available even when a filtered trace is shown?",
+        "options": [
+          "So processing can be inspected against the original samples",
+          "Because filtering always destroys R waves",
+          "Because raw ECG is automatically diagnostic",
+          "Only to make the file larger"
+        ],
+        "correct": 0,
+        "required": true
+      },
+      {
+        "id": "post_baseline",
+        "concept_id": "baseline",
+        "type": "single_choice",
+        "prompt": "A wave is 8 small boxes above baseline and each box is 50 ΔADC. The relative amplitude is:",
+        "options": [
+          "+58 ΔADC",
+          "+400 ΔADC",
+          "+800 ΔADC",
+          "−400 ΔADC"
+        ],
+        "correct": 1,
+        "required": true
+      }
+    ]
+  },
+  "live": [
+    {
+      "id": "live_filtering",
+      "concept_id": "filtering",
+      "type": "single_choice",
+      "prompt": "Looking at the two traces, which statement is safest?",
+      "options": [
+        "Filtering may change visible noise while timing should remain traceable",
+        "The filtered trace is always the physiological truth",
+        "Raw data should be discarded after filtering",
+        "Any smoother trace is automatically more accurate"
+      ],
+      "correct": 0
+    }
+  ]
+}
