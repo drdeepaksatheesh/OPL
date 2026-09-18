@@ -51,3 +51,19 @@ and should be archived with a DOI when possible.
 ## Change control
 
 A released module may continue to evolve, but later changes must not silently alter the software version used in a published analysis.
+
+
+## Attribution gate
+
+No Reference Lab is release-ready until the public interface visibly identifies the source dataset and its provenance.
+
+Required visible attribution:
+- dataset title;
+- source organization/repository;
+- citation/publication;
+- DOI or persistent identifier when available;
+- license/reuse terms;
+- exact records or subset used;
+- OPL transformations/processing applied.
+
+This is a release requirement, not an optional documentation enhancement.
