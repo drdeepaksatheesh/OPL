@@ -1,53 +1,58 @@
 export const ECG_TEACHING_QUESTIONS = Object.freeze([
   {
-    id: "raw-preservation",
-    prompt: "When studying what filtering changes, which signal should remain available unchanged?",
+    id: "ideal-purpose",
+    prompt: "Why does OPL begin with an idealized ECG before showing the real recording?",
     options: [
-      "Only the filtered trace",
-      "The original raw digital recording",
-      "A screenshot of the ECG",
-      "Only the R-peak locations"
+      "Because synthetic ECG is more biologically accurate than real ECG",
+      "To make the notation, baseline and measurement ruler unambiguous before introducing biological uncertainty",
+      "Because real ECG cannot be measured",
+      "To replace the need for real reference data"
     ],
     answer: 1,
-    explanation: "The original digital samples are the reference. Filtering can create a new view, but it should not overwrite the source recording."
+    explanation: "The ideal trace is a teaching model. It establishes what P-Q-R-S-T notation and a measurement mean; validation still comes from real reference data."
   },
   {
     id: "sample-time",
-    prompt: "This ECG-ID record is sampled at 500 Hz. How much time does one sample represent?",
+    prompt: "A 500 Hz ECG has how much time between consecutive samples?",
     options: ["0.5 ms", "1 ms", "2 ms", "5 ms"],
     answer: 2,
     explanation: "500 samples per second means 1000/500 = 2 ms per sample."
   },
   {
-    id: "relative-amplitude",
-    prompt: "Why does this OPL teaching view report vertical measurements as ΔADC rather than automatically calling them millivolts?",
+    id: "baseline-uncertain",
+    prompt: "In a real trace, the baseline wanders enough that no local isoelectric reference can be defended. What should OPL do?",
     options: [
-      "ECG has no voltage information",
-      "ADC values can never be measured",
-      "Relative digital amplitude is valid, but absolute input-referred mV needs a justified physical calibration",
-      "Millivolts are only used for EEG"
+      "Choose zero automatically and report amplitude anyway",
+      "Smooth the trace until the baseline looks flat",
+      "Withhold the vertical amplitude claim while retaining defensible time measurements",
+      "Discard all timing information including R–R intervals"
     ],
     answer: 2,
-    explanation: "The digitized geometry is useful for teaching and within-trace measurement. An absolute mV claim needs a documented physical conversion."
+    explanation: "Uncertainty is part of the result. A doubtful baseline invalidates the specific vertical reference assumption; it does not automatically invalidate sample timing."
   },
   {
-    id: "boxes",
-    prompt: "If the vertical small-box scale is 50 ΔADC and a wave rises 8 small boxes above the selected baseline, what is the relative amplitude?",
-    options: ["+100 ΔADC", "+200 ΔADC", "+400 ΔADC", "+800 ΔADC"],
-    answer: 2,
-    explanation: "8 × 50 ΔADC = +400 ΔADC relative to the selected baseline."
+    id: "rr-baseline-wander",
+    prompt: "Can R–R timing remain useful when slow baseline wander is present?",
+    options: [
+      "Never",
+      "Yes, if R peaks remain reliably identifiable and beat detection itself has been validated",
+      "Yes, regardless of whether R peaks can be detected",
+      "Only after converting the signal to absolute millivolts"
+    ],
+    answer: 1,
+    explanation: "HRV is fundamentally a beat-timing problem. Baseline drift may complicate morphology/amplitude while R-peak timing can remain usable if detection is reliable."
   },
   {
     id: "source-filtered",
-    prompt: "In this first ECG-ID lab, what does “source filtered” mean?",
+    prompt: "In the ECG-ID view, what does “source filtered” mean?",
     options: [
-      "Filtered by your phone",
+      "Filtered by the phone",
       "Filtered by OPL after loading",
       "A filtered channel supplied by the original ECG-ID dataset",
       "A clinically corrected diagnostic ECG"
     ],
     answer: 2,
-    explanation: "OPL keeps the dataset-provided filtered channel distinct from any future OPL filtering algorithm."
+    explanation: "OPL keeps the dataset-provided filtered channel distinct from the raw channel and from any future OPL filtering algorithm."
   }
 ]);
 
