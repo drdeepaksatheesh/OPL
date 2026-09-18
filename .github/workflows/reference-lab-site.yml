@@ -295,11 +295,11 @@ jobs:
 
             $joinBody = @{join_code=$joinCode;label='CI Student'} | ConvertTo-Json -Compress
             $join = Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/join') -ContentType 'application/json' -Body $joinBody
-            $pid = $join.participant_id
-            if (-not $pid) { throw 'Student join did not return participant id.' }
+            $participantId = $join.participant_id
+            if (-not $participantId) { throw 'Student join did not return participant id.' }
 
             $preBody = @{
-              participant_id=$pid
+              participant_id=$participantId
               type='pretest_completed'
               client_time=[DateTime]::UtcNow.ToString('o')
               section_id=$null
@@ -325,13 +325,13 @@ jobs:
             $sectionBody = @{type='set_section';section=$section} | ConvertTo-Json -Depth 10 -Compress
             Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $sectionBody | Out-Null
 
-            $studentState = Invoke-RestMethod -Uri ($base + '/classroom/api/student/state?participant_id=' + $pid)
+            $studentState = Invoke-RestMethod -Uri ($base + '/classroom/api/student/state?participant_id=' + $participantId)
             if ($studentState.state.phase -ne 'teach' -or $studentState.state.section.id -ne 'baseline') {
               throw 'Student did not receive teacher section state.'
             }
 
             $doubtBody = @{
-              participant_id=$pid
+              participant_id=$participantId
               type='doubt_submitted'
               client_time=[DateTime]::UtcNow.ToString('o')
               section_id='baseline'
@@ -343,7 +343,7 @@ jobs:
             Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $liveOpen | Out-Null
 
             $liveBody = @{
-              participant_id=$pid
+              participant_id=$participantId
               type='live_response'
               client_time=[DateTime]::UtcNow.ToString('o')
               section_id='baseline'
@@ -355,7 +355,7 @@ jobs:
             Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $postPhase | Out-Null
 
             $postBody = @{
-              participant_id=$pid
+              participant_id=$participantId
               type='posttest_completed'
               client_time=[DateTime]::UtcNow.ToString('o')
               section_id='baseline'
