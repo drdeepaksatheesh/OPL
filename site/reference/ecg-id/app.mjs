@@ -10,7 +10,7 @@ import {
 } from "../../reference-lab-core.mjs";
 import {saveRecord, getRecord} from "../../offline-store.mjs";
 import {validateReferenceIntegrity, makeValidationReport} from "../../reference-validation.mjs";
-import {generateIdealEcg, IDEAL_ECG_SPEC} from "./ideal-ecg.mjs";
+import {generateIdealEcg, IDEAL_ECG_SPEC, nearestIdealLandmark, interpretIdealCalipers} from "./ideal-ecg.mjs";
 import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
 
 const IMPERFECT_RECORD_URL = "./data/Person_01_rec_1.json";
@@ -56,7 +56,7 @@ const el = Object.fromEntries([
   "quickMode","advancedMode","themeToggle","idealSource","cleanSource","realSource",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
-  "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary"
+  "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -531,15 +531,25 @@ function renderMeasurements() {
   const a = state.calipers.a;
   const b = state.calipers.b;
 
+  let aText = signal && a != null ? cursorText(a, signal[a]) : "—";
+  let bText = signal && b != null ? cursorText(b, signal[b]) : "—";
+
+  if (state.sourceMode === "ideal") {
+    if (a != null) aText = idealCursorText(a, signal[a]);
+    if (b != null) bText = idealCursorText(b, signal[b]);
+  }
+
   const rows = [
-    ["A", signal && a != null ? cursorText(a, signal[a]) : "—"],
-    ["B", signal && b != null ? cursorText(b, signal[b]) : "—"],
+    ["A", aText],
+    ["B", bText],
     ["Δt", fs && a != null && b != null ? roundNumber(durationMs(a,b,fs), 2) + " ms" : "—"],
     ["Signal", signalLabel()]
   ];
   el.measurementGrid.innerHTML = rows.map(([label,value]) =>
     "<div><span>" + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong></div>"
   ).join("");
+
+  renderMeasurementAssist();
 
   if (state.sourceMode === "ideal") {
     el.baselineOutput.textContent = "0 mV";
@@ -554,6 +564,68 @@ function renderMeasurements() {
     el.baselineOutput.textContent = formatSigned(state.baseline) + " ADC";
     el.baselineInput.value = String(roundNumber(state.baseline, 3));
   }
+}
+
+function idealCursorText(sample, value) {
+  const landmark = nearestIdealLandmark(state.record, sample, 30);
+  const delta = value - IDEAL_ECG_SPEC.baseline_mV;
+  if (!landmark) {
+    return roundNumber(sampleToMs(sample, state.record.sampling_rate_hz), 2) +
+      " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
+  }
+  const offset = roundNumber(landmark.distance_ms, 1);
+  const offsetText = offset === 0 ? "on landmark" : (offset > 0 ? "+" : "") + offset + " ms";
+  return "near " + landmark.label + " · " + offsetText + " · " + formatSigned(roundNumber(delta, 3)) + " mV";
+}
+
+function renderMeasurementAssist() {
+  if (!el.measurementAssist) return;
+  if (state.sourceMode !== "ideal") {
+    el.measurementAssist.innerHTML = "";
+    return;
+  }
+
+  const a = state.calipers.a;
+  const b = state.calipers.b;
+  if (a == null && b == null) {
+    el.measurementAssist.innerHTML =
+      "<strong>Landmark assist:</strong> place A and B near the boundaries of a P wave, PR interval, QRS complex, QT interval, or successive R peaks.";
+    return;
+  }
+
+  if (a == null || b == null) {
+    const sample = a ?? b;
+    const landmark = nearestIdealLandmark(state.record, sample, 30);
+    el.measurementAssist.innerHTML = landmark
+      ? "<strong>Landmark assist:</strong> first caliper is near " + escapeHtml(landmark.label) + ". Place the second boundary."
+      : "<strong>Landmark assist:</strong> first caliper is not within 30 ms of a declared landmark.";
+    return;
+  }
+
+  const interpretation = interpretIdealCalipers(state.record, a, b, 30);
+  if (!interpretation.measurement) {
+    const aLabel = interpretation.a?.label || "an unlabeled point";
+    const bLabel = interpretation.b?.label || "an unlabeled point";
+    el.measurementAssist.innerHTML =
+      "<strong>Landmark assist:</strong> A is near " + escapeHtml(aLabel) +
+      " and B is near " + escapeHtml(bLabel) +
+      ". OPL does not recognize that pair as one of the declared teaching intervals.";
+    return;
+  }
+
+  const m = interpretation.measurement;
+  const error = roundNumber(m.error_ms, 1);
+  const absError = Math.abs(error);
+  const cls = absError <= 10 ? "good" : "warn";
+  const difference = error === 0 ? "exactly matches" :
+    (error > 0 ? "+" : "") + error + " ms from";
+
+  el.measurementAssist.innerHTML =
+    "<strong>" + escapeHtml(m.label) + "</strong> · measured " +
+    escapeHtml(String(roundNumber(m.measured_ms, 1))) + " ms · model " +
+    escapeHtml(String(roundNumber(m.expected_ms, 1))) + " ms · <span class=\"" + cls + "\">" +
+    escapeHtml(difference) + " model</span>. " +
+    "This is manual placement feedback; OPL has not moved your calipers.";
 }
 
 function cursorText(sample, value) {
