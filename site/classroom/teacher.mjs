@@ -69,6 +69,12 @@ function bind(){
     teacherAction({type:"open_live_question",question_id:q.id});
   });
   el.closeLiveQuestion.addEventListener("click",()=>teacherAction({type:"close_live_question"}));
+  window.addEventListener("message", event=>{
+    if(event.origin!==location.origin) return;
+    if(event.data?.type!=="opl-reference-view" || !event.data.view) return;
+    teacherAction({type:"set_reference_view",reference_view:event.data.view}).catch(()=>{});
+  });
+
   el.questionnaireFile.addEventListener("change", async event=>{
     const file=event.target.files?.[0];
     if(!file)return;
