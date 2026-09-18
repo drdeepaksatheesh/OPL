@@ -28,8 +28,9 @@
     ]
   },
   "annotations": {
-    "count_per_record": 10,
-    "description": "R- and T-wave peak annotations from an automated detector",
+    "annotated_beats_per_record": 10,
+    "markers": "Automated R- and T-wave peak markers",
+    "event_count": "Read from the source .atr file; do not equate event count with beat count.",
     "audit_status": "unaudited"
   },
   "opl_use": {
