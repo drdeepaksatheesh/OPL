@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173b57">
+  <meta name="description" content="OpenPhysiologyLab ECG Reference Lab — inspect raw and filtered trusted ECG data with visible provenance and baseline-relative calipers.">
+  <title>ECG Reference Lab · OpenPhysiologyLab</title>
+  <link rel="manifest" href="../../manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <a class="back" href="../../index.html">← OpenPhysiologyLab</a>
+      <p class="eyebrow">REFERENCE LAB 01</p>
+      <h1>ECG Reference Lab</h1>
+      <p class="subtitle">Trusted data → visible processing → baseline-relative measurement.</p>
+    </div>
+    <div class="top-actions">
+      <button data-install-opl hidden>Install OPL</button>
+      <span class="online-state" id="onlineState">Checking data…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="provenance" aria-labelledby="source-heading">
+      <div>
+        <p class="section-kicker">VISIBLE ACKNOWLEDGEMENT</p>
+        <h2 id="source-heading">Reference source</h2>
+      </div>
+      <div id="provenanceGrid" class="provenance-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="workspace">
+      <div class="controls">
+        <div class="control-group">
+          <label for="waveformMode">Display</label>
+          <select id="waveformMode">
+            <option value="overlay">Raw + source filtered</option>
+            <option value="raw">Raw only</option>
+            <option value="filtered">Source filtered only</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="measurementSignal">Measure amplitude on</label>
+          <select id="measurementSignal">
+            <option value="raw">Raw ECG</option>
+            <option value="filtered">Source filtered ECG</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="windowLength">Window</label>
+          <select id="windowLength">
+            <option value="2">2 s</option>
+            <option value="5" selected>5 s</option>
+            <option value="10">10 s</option>
+            <option value="20">20 s</option>
+          </select>
+        </div>
+
+        <div class="control-group grow">
+          <label for="windowStart">Window start <span id="windowStartLabel">0.0 s</span></label>
+          <input id="windowStart" type="range" min="0" max="15" step="0.02" value="0">
+        </div>
+
+        <label class="checkbox">
+          <input id="showAnnotations" type="checkbox" checked>
+          Reference annotations
+        </label>
+      </div>
+
+      <div class="plot-card">
+        <div class="legend">
+          <span><i class="raw-swatch"></i> Raw ECG</span>
+          <span><i class="filtered-swatch"></i> Source filtered ECG</span>
+          <span><i class="baseline-swatch"></i> Selected baseline</span>
+        </div>
+        <canvas id="ecgCanvas" aria-label="Interactive ECG waveform"></canvas>
+        <p class="canvas-help">Click the trace to place caliper A, then B. A third click starts again at A. Measurements use source samples, not screen pixels.</p>
+      </div>
+
+      <div class="measurement-layout">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">BASELINE</p>
+              <h2>Choose the reference</h2>
+            </div>
+            <output id="baselineOutput">0 ADC</output>
+          </div>
+          <p class="muted">Amplitude is reported as ΔADC from the baseline you explicitly choose. This is not labelled as mV.</p>
+          <div class="button-row">
+            <button id="baselineZero">Use source ADC zero</button>
+            <button id="baselineMedian">Use visible median</button>
+            <button id="baselineFromA">Use caliper A</button>
+          </div>
+          <label class="number-label" for="baselineInput">Baseline ADC value</label>
+          <input id="baselineInput" type="number" step="1" value="0">
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="section-kicker">CALIPERS</p>
+              <h2>Measure geometry</h2>
+            </div>
+            <button id="resetCalipers">Reset</button>
+          </div>
+          <div id="measurementGrid" class="measurement-grid">
+            <div><span>A</span><strong>—</strong></div>
+            <div><span>B</span><strong>—</strong></div>
+            <div><span>Δt</span><strong>—</strong></div>
+            <div><span>Signal</span><strong>—</strong></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="keep-section">
+      <div>
+        <p class="section-kicker">DECENTRALIZED BY DESIGN</p>
+        <h2>Download and keep</h2>
+        <p>Keep the reference record in this browser for offline use, or export a self-contained OPL Reference Package containing the waveform, provenance and your current baseline/calipers.</p>
+      </div>
+      <div class="keep-actions">
+        <button id="saveOffline">Save record offline</button>
+        <button id="exportPackage">Download OPL package</button>
+        <label class="file-button">
+          Open saved package
+          <input id="importPackage" type="file" accept=".json,application/json">
+        </label>
+      </div>
+      <p id="keepStatus" class="status-line" aria-live="polite"></p>
+    </section>
+
+    <section class="method-note">
+      <h2>What this first lab does — and does not claim</h2>
+      <p>It preserves the source record, distinguishes raw from source-provided filtered data, exposes the baseline used for vertical measurements, and calculates time directly from the source sampling rate. It is an educational/research visualization tool, not a diagnostic ECG device.</p>
+      <p>The ECG-ID beat annotations are automated and unaudited; they are shown as source metadata, not treated as cardiologist gold-standard annotations.</p>
+    </section>
+  </main>
+
+  <footer>
+    <span>Open-source · Decentralized · Reliable · Reproducible</span>
+    <span data-opl-usage-count hidden></span>
+  </footer>
+
+  <script src="../../config.js"></script>
+  <script src="../../pwa.js"></script>
+  <script src="../../analytics.js"></script>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>
