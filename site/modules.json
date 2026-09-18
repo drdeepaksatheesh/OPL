@@ -1,62 +1,62 @@
 {
   "project": "OpenPhysiologyLab",
-  "tagline": "Record. Analyse. Understand.",
+  "tagline": "Trusted data. Visible analysis. Understand physiology.",
   "modules": [
     {
-      "id": "recorder",
-      "name": "OPL Recorder",
-      "area": "Acquisition",
+      "id": "ecg-reference",
+      "name": "ECG Reference Lab",
+      "area": "Reference physiology",
       "status": "development",
-      "summary": "Low-friction physiological signal acquisition with metadata and inspectable exports."
-    },
-    {
-      "id": "calibration",
-      "name": "OPL Calibration Bench",
-      "area": "Validation",
-      "status": "planned-public-beta",
-      "summary": "Transparent calibration and signal-chain checks for low-cost physiological acquisition hardware."
-    },
-    {
-      "id": "ecg-calipers",
-      "name": "OPL ECG Calipers",
-      "area": "ECG",
-      "status": "development",
-      "summary": "Interactive ECG measurement and morphology/conduction teaching."
-    },
-    {
-      "id": "cardiac-chart",
-      "name": "OPL Cardiac Chart",
-      "area": "Cardiac physiology",
-      "status": "planned",
-      "summary": "Synchronised visual teaching of electrical and mechanical events of the cardiac cycle."
-    },
-    {
-      "id": "rr-lab",
-      "name": "OPL RR Lab",
-      "area": "HRV",
-      "status": "planned",
-      "summary": "RR pairs and triplets as a visual bridge to beat-to-beat variability."
+      "summary": "Trusted open ECG data made inspectable: raw versus filtered signal, baseline-relative morphology, time/amplitude calipers, annotations and reproducible provenance."
     },
     {
       "id": "visual-hrv",
       "name": "OPL Visual HRV",
-      "area": "HRV",
+      "area": "Reference physiology",
       "status": "planned",
-      "summary": "Interactive visualisation of NN intervals, time-domain HRV and Poincaré geometry."
+      "summary": "Stepwise visualisation of RR/NN intervals, successive differences, time-domain HRV and Poincaré geometry using reproducible reference data."
     },
     {
-      "id": "open-cardiac-anatomy",
-      "name": "Open Cardiac Anatomy",
-      "area": "Anatomy + physiology",
+      "id": "ppg-pulse-transit",
+      "name": "PPG & Pulse Transit Lab",
+      "area": "Reference physiology",
       "status": "planned",
-      "summary": "A standalone interactive teaching instrument for cardiac structure-function relationships."
+      "summary": "Raw PPG morphology, pulse-foot timing, ECG-to-PPG arrival time and site-to-site pulse transit using trusted open recordings."
     },
     {
-      "id": "experimental-heart",
-      "name": "OPL Experimental Heart Lab",
-      "area": "Experimental physiology",
+      "id": "cardiac-chart",
+      "name": "OPL Cardiac Chart",
+      "area": "Integrated physiology",
       "status": "planned",
-      "summary": "Experimental cardiac physiology teaching built around validated protocols and real-data linkage."
+      "summary": "Synchronised electrical and mechanical cardiac events using citable reference physiology."
+    },
+    {
+      "id": "vascular-pulse",
+      "name": "Vascular Pulse Lab",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Central and peripheral pulse morphology and propagation concepts using synchronized open cardiovascular signals."
+    },
+    {
+      "id": "cerebral-doppler",
+      "name": "Cerebral Doppler Lab",
+      "area": "Reference physiology",
+      "status": "planned",
+      "summary": "Visual teaching of cerebral flow-velocity waveforms, pulsatility and autoregulation using open reference data."
+    },
+    {
+      "id": "recorder",
+      "name": "OPL Recorder",
+      "area": "Acquisition — later phase",
+      "status": "planned",
+      "summary": "Future live physiological acquisition feeding the same validated Reference Lab interfaces."
+    },
+    {
+      "id": "calibration",
+      "name": "OPL Calibration Bench",
+      "area": "Acquisition — later phase",
+      "status": "planned",
+      "summary": "Future transparent calibration and signal-chain quality control for low-cost acquisition hardware."
     }
   ]
 }
