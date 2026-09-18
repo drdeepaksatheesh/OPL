@@ -24,11 +24,12 @@ const state = {
   measurementSignal: "raw",
   windowSeconds: 5,
   windowStartSeconds: 0,
-  showAnnotations: true
+  showAnnotations: true,
+  verticalGridAdc: 50
 };
 
 const el = Object.fromEntries([
-  "onlineState","provenanceGrid","waveformMode","measurementSignal","windowLength",
+  "onlineState","provenanceGrid","waveformMode","measurementSignal","verticalGrid","gridScale","windowLength",
   "windowStart","windowStartLabel","showAnnotations","ecgCanvas","baselineOutput",
   "baselineInput","baselineZero","baselineMedian","baselineFromA","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus"
@@ -70,6 +71,11 @@ async function boot() {
 function bindEvents() {
   el.waveformMode.addEventListener("change", () => { state.mode = el.waveformMode.value; draw(); });
   el.measurementSignal.addEventListener("change", () => { state.measurementSignal = el.measurementSignal.value; renderMeasurements(); draw(); });
+  el.verticalGrid.addEventListener("change", () => {
+    state.verticalGridAdc = Number(el.verticalGrid.value);
+    el.gridScale.textContent = "Small box: 40 ms × " + state.verticalGridAdc + " ΔADC";
+    draw();
+  });
   el.windowLength.addEventListener("change", () => {
     state.windowSeconds = Number(el.windowLength.value);
     clampWindowStart();
@@ -318,15 +324,17 @@ function draw() {
 
 function drawGrid(start,end,yMin,yMax,dpr) {
   const w=el.ecgCanvas.width,h=el.ecgCanvas.height,fs=state.record.sampling_rate_hz;
+  const startTime=start/fs,endTime=end/fs;
+
   ctx.lineWidth=.55*dpr;
   ctx.strokeStyle="#e8edf1";
-  const startTime=start/fs,endTime=end/fs;
   const minor=.04;
   const first=Math.ceil(startTime/minor)*minor;
   for(let t=first;t<=endTime+1e-9;t+=minor){
     const x=(t-startTime)/(endTime-startTime)*w;
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();
   }
+
   ctx.strokeStyle="#d9e1e7";
   const major=.2;
   const firstMajor=Math.ceil(startTime/major)*major;
@@ -334,10 +342,16 @@ function drawGrid(start,end,yMin,yMax,dpr) {
     const x=(t-startTime)/(endTime-startTime)*w;
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();
   }
-  const horizontal=8;
-  ctx.strokeStyle="#edf1f4";
-  for(let i=1;i<horizontal;i++){
-    const y=i/horizontal*h;
+
+  const step=state.verticalGridAdc;
+  const lower=Math.floor((yMin-state.baseline)/step);
+  const upper=Math.ceil((yMax-state.baseline)/step);
+  for(let n=lower;n<=upper;n++){
+    if(n===0) continue;
+    const value=state.baseline+n*step;
+    const y=yFor(value,yMin,yMax,h);
+    ctx.strokeStyle=(Math.abs(n)%5===0)?"#d9e1e7":"#edf1f4";
+    ctx.lineWidth=(Math.abs(n)%5===0?1:.55)*dpr;
     ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();
   }
 }
