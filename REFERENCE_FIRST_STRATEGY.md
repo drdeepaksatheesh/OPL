@@ -135,3 +135,32 @@ OPL succeeds before owning any new hardware if a student, teacher, or researcher
 3. reproduce the key measurement;
 4. understand why the measurement matters physiologically;
 5. cite the original data and the OPL release used to analyze it.
+
+
+## Open-source and visible-attribution rule
+
+OPL Phase 1 is fully open-source.
+
+Every public Reference Lab must visibly display, inside the application:
+
+- dataset name;
+- source repository/institution;
+- original investigators or consortium where available;
+- primary associated publication(s);
+- dataset DOI or permanent identifier where available;
+- license or reuse terms;
+- exact record(s) or subset used;
+- any transformations performed by OPL;
+- OPL version used for the analysis.
+
+Attribution must not be hidden only in a README or source-code comment.
+
+A learner should be able to answer, from the tool itself:
+
+> Where did this signal come from, who produced it, what am I allowed to do with it, and what did OPL change?
+
+Where redistribution is not permitted, OPL should link to or fetch from the authoritative source rather than republishing the waveform.
+
+Where redistribution is permitted, OPL may bundle selected examples while preserving the original license and attribution requirements.
+
+The OPL source code for released Reference Labs should remain openly inspectable and versioned so that the visualization and analysis can be independently reproduced.
