@@ -30,3 +30,23 @@ License: Open Data Commons Attribution License v1.0
 Reference record: Person_01 / rec_1
 
 This test build was generated from the OPL publication-series workflow.
+
+
+PHONE TEST (same Wi-Fi)
+1. On the Windows PC, double-click START_OPL_PHONE_TEST.cmd.
+2. If Windows Firewall asks, allow access only on the trusted/private network you are using.
+3. The window prints an "Open on phone" address such as:
+   http://192.168.x.x:8765/reference/ecg-id/index.html
+4. Connect the phone to the same Wi-Fi/LAN and open that address in Safari/Chrome.
+5. The phone should default to Teaching mode; the laptop defaults to Advanced mode.
+6. This LAN preview is for UI testing. Installation/offline PWA behavior requires the later HTTPS deployment.
+
+MOBILE TEACHING TEST
+- Source attribution appears in compact form and full details can be expanded.
+- Teaching / Advanced toggle works.
+- Raw / Filtered / Overlay buttons are easy to tap.
+- Trace fits without horizontal page scrolling.
+- Use visible median sets the baseline.
+- Two taps place A/B calipers.
+- Measurement values update.
+- The five-question quiz gives immediate explanations and keeps progress locally.
