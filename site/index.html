@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="OpenPhysiologyLab — browser-accessible physiology instruments for teaching, acquisition and validation.">
+  <title>OpenPhysiologyLab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">OPENPHYSIOLOGYLAB</p>
+      <h1>Record. Analyse. Understand.</h1>
+      <p class="lede">A growing collection of small, transparent physiology instruments for teaching, low-cost acquisition and reproducible biomedical experimentation.</p>
+      <div class="notice">Public-site prototype · individual modules are released only after they pass the OPL release gate.</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="intro">
+      <h2>Use the instrument, not the repository</h2>
+      <p>Each OPL module is designed to work as a focused tool on its own and later connect to the larger OpenPhysiologyLab workflow. Source, validation notes and citation information accompany released versions.</p>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Physiology instruments</h2>
+        <span id="count"></span>
+      </div>
+      <div id="modules" class="grid" aria-live="polite"></div>
+    </section>
+
+    <section class="principles">
+      <h2>What a public OPL release means</h2>
+      <div class="principle-grid">
+        <article><strong>Accessible</strong><span>Open in a browser or install with minimal friction.</span></article>
+        <article><strong>Transparent</strong><span>Inputs, processing, outputs and limitations are visible.</span></article>
+        <article><strong>Versioned</strong><span>Published analyses point to an exact frozen release.</span></article>
+        <article><strong>Validated</strong><span>Claims are limited to the level actually tested.</span></article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>OpenPhysiologyLab</span>
+    <span>Educational and research prototype · not a diagnostic medical device.</span>
+  </footer>
+
+<script>
+const statusLabel = {
+  "development":"In development",
+  "planned":"Planned",
+  "planned-public-beta":"Public beta planned",
+  "beta":"Beta",
+  "validated":"Validated"
+};
+
+fetch("modules.json")
+  .then(r => r.json())
+  .then(data => {
+    const root = document.getElementById("modules");
+    document.getElementById("count").textContent = data.modules.length + " modules";
+    data.modules.forEach(m => {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="area">${m.area}</span>
+          <span class="status">${statusLabel[m.status] || m.status}</span>
+        </div>
+        <h3>${m.name}</h3>
+        <p>${m.summary}</p>
+        <div class="card-foot">Release page will appear here when this module crosses the public release gate.</div>
+      `;
+      root.appendChild(card);
+    });
+  })
+  .catch(() => {
+    document.getElementById("modules").innerHTML = "<p>Module manifest could not be loaded.</p>";
+  });
+</script>
+</body>
+</html>
