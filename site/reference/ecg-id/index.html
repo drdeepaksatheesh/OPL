@@ -194,6 +194,24 @@
       </div>
     </section>
 
+    <section class="validation-section" aria-labelledby="validation-heading">
+      <div class="validation-head">
+        <div>
+          <p class="section-kicker">REFERENCE VALIDATION</p>
+          <h2 id="validation-heading">Counter-check this record</h2>
+          <p>These checks are computed from the loaded ECG-ID record and its provenance metadata. They verify that the browser representation preserves the expected source structure; they do not imply diagnostic validation.</p>
+        </div>
+        <div class="validation-score">
+          <strong id="validationPassed">—</strong>
+          <span id="validationTotal">checks</span>
+        </div>
+      </div>
+      <div id="validationChecks" class="validation-checks" aria-live="polite"></div>
+      <div class="button-row">
+        <button id="downloadValidation">Download validation report</button>
+      </div>
+    </section>
+
     <section class="keep-section">
       <div>
         <p class="section-kicker">DECENTRALIZED BY DESIGN</p>
