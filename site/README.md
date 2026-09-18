@@ -14,14 +14,19 @@ Do not add unfinished research logic to the public site merely because it exists
 
 ## Current state
 
-The landing page is a non-destructive prototype. It lists the intended modular structure but does not claim unreleased modules are validated or ready for use.
+The first active public instrument is **OPL ECG Reference Lab**. It is reference-first and hardware-independent.
 
-## Next implementation target
+The Paper 1 release path is deliberately separate from the later Classroom Mode and acquisition work.
 
-The first functional browser module should be chosen based on the shortest path to:
+## Current implementation target
 
-1. real use by another physiology laboratory;
-2. a clean abstract;
-3. a measurable validation experiment.
+Build one excellent ECG Reference Lab around trusted open datasets and demonstrate:
 
-Current leading candidate: **OPL Calibration Bench / Recorder**, because acquisition accuracy and calibration create the foundation for later ECG/HRV validation.
+1. faithful preservation of source waveform/time/unit metadata;
+2. transparent raw-versus-processed visualization;
+3. reproducible baseline-relative and temporal measurement;
+4. quantitative counter-verification against appropriate reference annotations/metadata;
+5. visible provenance and exact versioning;
+6. downloadable/offline use on phone and computer.
+
+Classroom pre/post evaluation and hardware acquisition are later OPL layers and are not part of the Paper 1 validation claim.
