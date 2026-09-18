@@ -40,7 +40,7 @@ const el = Object.fromEntries([
   "windowStart","windowStartLabel","showAnnotations","ecgCanvas","baselineOutput",
   "baselineInput","baselineZero","baselineMedian","baselineFromA","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
-  "quickMode","advancedMode","quickBaselineMedian","teachingHint",
+  "quickMode","advancedMode","quickBaselineMedian","teachingHint","provenanceDetails","provenanceSummary",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset"
 ].map(id => [id, document.getElementById(id)]));
 
@@ -226,6 +226,7 @@ function setInterfaceMode(mode, persist = true) {
   document.body.classList.toggle("mode-advanced", state.interfaceMode === "advanced");
   el.quickMode.setAttribute("aria-pressed", String(state.interfaceMode === "teaching"));
   el.advancedMode.setAttribute("aria-pressed", String(state.interfaceMode === "advanced"));
+  if (el.provenanceDetails) el.provenanceDetails.open = state.interfaceMode === "advanced";
   if (persist) {
     try { localStorage.setItem(MODE_KEY, state.interfaceMode); } catch {}
   }
@@ -356,6 +357,14 @@ function renderProvenance() {
     ["OPL processing", "None until a user-selected operation is applied"],
     ["OPL build", state.buildInfo?.git_sha ? state.buildInfo.git_sha.slice(0, 12) : "development source"]
   ];
+
+  if (el.provenanceSummary) {
+    const dataset = p.dataset || m.title || "ECG-ID";
+    const repository = p.repository || m.repository || "PhysioNet";
+    const sampling = state.record ? state.record.sampling_rate_hz + " Hz" : "500 Hz";
+    const bits = state.record ? state.record.adc?.resolution_bits + "-bit" : "12-bit";
+    el.provenanceSummary.textContent = dataset + " · " + repository + " · " + sampling + " · " + bits;
+  }
 
   el.provenanceGrid.innerHTML = values.map(([label,value]) => {
     const content = label === "DOI" && value
