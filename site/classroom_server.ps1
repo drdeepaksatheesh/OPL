@@ -95,9 +95,10 @@ function Public-State {
     participants = $ParticipantValues
     questionnaire = [pscustomobject]@{
       path = 'questionnaires/ecg-reference-v0.1.json'
-      id = 'ecg-reference-classroom-v0.1'
-      version = '0.1.0'
+      id = [string]$QuestionnaireDefinition.id
+      version = [string]$QuestionnaireDefinition.version
     }
+    questionnaire_definition = $QuestionnaireDefinition
     opl_build = $BuildInfo
   }
 }
@@ -132,6 +133,9 @@ if (Test-Path $BuildInfoPath) {
   try { $BuildInfo = Get-Content $BuildInfoPath -Raw | ConvertFrom-Json } catch {}
 }
 
+$DefaultQuestionnairePath = Join-Path $RootFull 'classroom/questionnaires/ecg-reference-v0.1.json'
+$QuestionnaireDefinition = Get-Content $DefaultQuestionnairePath -Raw | ConvertFrom-Json
+
 $State = [ordered]@{
   phase = 'pre'
   section = $null
@@ -150,7 +154,7 @@ $Manifest = [ordered]@{
   title = 'ECG Reference Lab classroom'
   join_code = $JoinCode
   started_at = $StartedAt
-  questionnaire = [ordered]@{ id='ecg-reference-classroom-v0.1'; version='0.1.0' }
+  questionnaire = [ordered]@{ id=[string]$QuestionnaireDefinition.id; version=[string]$QuestionnaireDefinition.version }
   reference_record = 'ECG-ID/Person_01/rec_1'
   opl_build = $BuildInfo
 }
@@ -292,6 +296,17 @@ try {
             $Old = $State.live_question_id
             $State.live_question_id = $null
             [void](New-Event 'live_question_closed' $null ([string]$State.section.id) @{ question_id=$Old } $null)
+          }
+          'set_questionnaire' {
+            $CandidateQuestionnaire = $Payload.questionnaire
+            if (-not $CandidateQuestionnaire -or -not $CandidateQuestionnaire.id -or -not $CandidateQuestionnaire.pre.items -or -not $CandidateQuestionnaire.post.items) {
+              Send-Text $Stream 'Invalid questionnaire definition.'
+              continue
+            }
+            $QuestionnaireDefinition = $CandidateQuestionnaire
+            $Manifest.questionnaire = [ordered]@{ id=[string]$QuestionnaireDefinition.id; version=[string]$QuestionnaireDefinition.version }
+            $Manifest | ConvertTo-Json -Depth 20 | Set-Content -Path $ManifestPath -Encoding utf8
+            [void](New-Event 'questionnaire_changed' $null ([string]$State.section.id) @{ id=[string]$QuestionnaireDefinition.id; version=[string]$QuestionnaireDefinition.version } $null)
           }
           default { Send-Text $Stream 'Unknown teacher action.'; continue }
         }
