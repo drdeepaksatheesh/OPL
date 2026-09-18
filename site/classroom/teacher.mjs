@@ -36,7 +36,7 @@ let questionnaire = null;
 let state = null;
 let events = [];
 
-const ids = ["joinCode","studentUrl","joinedCount","preCount","activeCount","postCount","phaseStatus","sectionList","liveQuestion","liveResponses","doubtList","prePostSummary","engagementSummary","copyStudentUrl","exportSession","openLiveQuestion","closeLiveQuestion","connectionBadge"];
+const ids = ["joinCode","studentUrl","joinedCount","preCount","activeCount","postCount","phaseStatus","sectionList","liveQuestion","liveResponses","doubtList","prePostSummary","engagementSummary","copyStudentUrl","exportSession","openLiveQuestion","closeLiveQuestion","connectionBadge","questionnaireFile","questionnaireStatus"];
 const el = Object.fromEntries(ids.map(id=>[id,document.getElementById(id)]));
 
 boot();
@@ -69,6 +69,20 @@ function bind(){
     teacherAction({type:"open_live_question",question_id:q.id});
   });
   el.closeLiveQuestion.addEventListener("click",()=>teacherAction({type:"close_live_question"}));
+  el.questionnaireFile.addEventListener("change", async event=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    try{
+      const definition=JSON.parse(await file.text());
+      validateQuestionnaire(definition);
+      await teacherAction({type:"set_questionnaire",questionnaire:definition});
+      el.questionnaireStatus.textContent="Loaded: "+definition.title+" · "+(definition.version||"unversioned");
+    }catch(error){
+      el.questionnaireStatus.textContent="Could not load questionnaire: "+error.message;
+    }finally{
+      event.target.value="";
+    }
+  });
 }
 
 function renderSections(){
@@ -98,6 +112,7 @@ async function refresh(){
     const payload=await api("./api/teacher/dashboard",{headers:authHeaders});
     state=payload.state;
     events=payload.events||[];
+    if(state.questionnaire_definition) questionnaire=state.questionnaire_definition;
     el.connectionBadge.textContent="Connected";
     render();
   }catch(error){
@@ -115,6 +130,7 @@ function render(){
   el.postCount.textContent=participants.filter(p=>p.posttest_completed).length;
   el.activeCount.textContent=participants.filter(p=>p.last_seen && now-new Date(p.last_seen).getTime()<30000).length;
   el.phaseStatus.textContent="Current phase: "+state.phase;
+  if(questionnaire) el.questionnaireStatus.textContent="Questionnaire: "+(questionnaire.title||questionnaire.id)+" · "+(questionnaire.version||"unversioned");
   document.querySelectorAll("[data-phase]").forEach(b=>b.classList.toggle("active",b.dataset.phase===state.phase));
   document.querySelectorAll("[data-section]").forEach(b=>b.classList.toggle("active",b.dataset.section===state.section?.id));
   renderLive();
@@ -176,4 +192,20 @@ function renderEngagement(){
     const pings=events.filter(e=>e.participant_id===p.id && e.type==="engagement_ping" && e.payload?.visible).length;
     return '<div class="event"><strong>'+escapeHtml(p.label||p.id.slice(0,8))+'</strong><span class="small">'+sectionCount+"/3 sections viewed · "+pings+" visible activity pings</span></div>";
   }).join("");
+}
+
+
+function validateQuestionnaire(definition){
+  if(!definition || typeof definition!=="object") throw new Error("questionnaire must be a JSON object");
+  if(!definition.id) throw new Error("id is required");
+  if(!definition.pre?.items || !Array.isArray(definition.pre.items)) throw new Error("pre.items array is required");
+  if(!definition.post?.items || !Array.isArray(definition.post.items)) throw new Error("post.items array is required");
+  const all=[...definition.pre.items,...definition.post.items,...(definition.live||[])];
+  for(const item of all){
+    if(!item.id || !item.prompt) throw new Error("each item needs id and prompt");
+    if(item.type==="single_choice"){
+      if(!Array.isArray(item.options) || item.options.length<2) throw new Error("single_choice needs options");
+      if(!Number.isInteger(item.correct) || item.correct<0 || item.correct>=item.options.length) throw new Error("single_choice needs a valid correct index");
+    }
+  }
 }
