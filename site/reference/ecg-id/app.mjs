@@ -13,8 +13,10 @@ import {validateReferenceIntegrity, makeValidationReport} from "../../reference-
 import {generateIdealEcg, IDEAL_ECG_SPEC} from "./ideal-ecg.mjs";
 import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
 
-const BUNDLED_RECORD_URL = "./data/Person_01_rec_1.json";
+const IMPERFECT_RECORD_URL = "./data/Person_01_rec_1.json";
+const CLEAN_RECORD_URL = "./data/LUDB_clean_LeadII.json";
 const REAL_RECORD_ID = "ECG-ID/Person_01/rec_1";
+const CLEAN_RECORD_ID_PREFIX = "LUDB/";
 const SESSION_KEY_BASE = "opl:ecg-reference:session:";
 const MODE_KEY = "opl:ecg-reference:mode";
 const THEME_KEY = "opl:theme";
@@ -23,6 +25,7 @@ const QUIZ_KEY = "opl:ecg-reference:quiz";
 const state = {
   record: null,
   realRecord: null,
+  cleanRecord: null,
   idealRecord: generateIdealEcg(),
   sourceManifest: null,
   buildInfo: null,
@@ -50,10 +53,10 @@ const el = Object.fromEntries([
   "baselineOutput","baselineInput","baselineZero","baselineMedian","baselineFromA",
   "baselineConfident","baselineUncertain","baselineRealityText","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
-  "quickMode","advancedMode","themeToggle","idealSource","realSource",
+  "quickMode","advancedMode","themeToggle","idealSource","cleanSource","realSource",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
-  "rrBridgeStats"
+  "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -82,12 +85,22 @@ async function boot() {
   }
 
   try {
-    state.realRecord = await fetch(BUNDLED_RECORD_URL, {cache: "no-cache"}).then(requireOk).then(r => r.json());
-    el.onlineState.textContent = navigator.onLine ? "Reference data ready" : "Offline cache";
+    state.cleanRecord = await fetch(CLEAN_RECORD_URL, {cache: "no-cache"}).then(requireOk).then(r => r.json());
+  } catch {
+    state.cleanRecord = null;
+  }
+
+  try {
+    state.realRecord = await fetch(IMPERFECT_RECORD_URL, {cache: "no-cache"}).then(requireOk).then(r => r.json());
   } catch {
     state.realRecord = await getRecord(REAL_RECORD_ID).catch(() => null);
-    el.onlineState.textContent = state.realRecord ? "Saved real record available" : "Real record unavailable";
   }
+
+  el.cleanSource.disabled = !state.cleanRecord;
+  el.realSource.disabled = !state.realRecord;
+  el.onlineState.textContent = state.cleanRecord && state.realRecord
+    ? (navigator.onLine ? "Reference data ready" : "Offline reference data")
+    : "Some reference data unavailable";
 
   switchSource("ideal", {restore:true});
 }
@@ -98,6 +111,13 @@ function bindEvents() {
   el.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 
   el.idealSource.addEventListener("click", () => switchSource("ideal", {restore:true}));
+  el.cleanSource.addEventListener("click", () => {
+    if (!state.cleanRecord) {
+      showStatus("The clean LUDB reference is unavailable in this build.", true);
+      return;
+    }
+    switchSource("clean", {restore:true});
+  });
   el.realSource.addEventListener("click", () => {
     if (!state.realRecord) {
       showStatus("The real ECG-ID record is unavailable in this build/offline cache.", true);
@@ -190,13 +210,15 @@ function bindEvents() {
   });
 
   el.saveOffline.addEventListener("click", async () => {
-    if (state.sourceMode !== "real" || !state.realRecord) {
+    if (state.sourceMode === "ideal") {
       showStatus("The ideal trace is generated locally and does not need to be downloaded for offline use.");
       return;
     }
-    await saveRecord(state.realRecord);
+    await saveRecord(state.record);
     persistSession();
-    showStatus("Saved the real ECG-ID record locally in this browser.");
+    showStatus(state.sourceMode === "clean"
+      ? "Saved the clean LUDB reference locally in this browser."
+      : "Saved the ECG-ID reference locally in this browser.");
   });
 
   el.downloadValidation.addEventListener("click", () => {
@@ -223,7 +245,9 @@ function bindEvents() {
     pkg.session.source_mode = state.sourceMode;
     const name = state.sourceMode === "ideal"
       ? "OPL_Ideal_ECG_teaching-package.json"
-      : "OPL_ECG-ID_Person_01_rec_1_reference-package.json";
+      : state.sourceMode === "clean"
+        ? "OPL_LUDB_clean_LeadII_reference-package.json"
+        : "OPL_ECG-ID_Person_01_rec_1_reference-package.json";
     downloadJson(name, pkg);
     showStatus("Downloaded the current OPL package with waveform, provenance, baseline state and calipers.");
   });
@@ -234,10 +258,15 @@ function bindEvents() {
     try {
       const value = JSON.parse(await file.text());
       const imported = importExportPackage(value);
-      const isIdeal = Boolean(imported.record?.provenance?.teaching_only) || String(imported.record?.record_id || "").startsWith("OPL-IDEAL/");
+      const importedId = String(imported.record?.record_id || "");
+      const isIdeal = Boolean(imported.record?.provenance?.teaching_only) || importedId.startsWith("OPL-IDEAL/");
+      const isClean = importedId.startsWith(CLEAN_RECORD_ID_PREFIX);
       if (isIdeal) {
         state.idealRecord = imported.record;
         switchSource("ideal", {session:imported.session});
+      } else if (isClean) {
+        state.cleanRecord = imported.record;
+        switchSource("clean", {session:imported.session});
       } else {
         state.realRecord = imported.record;
         switchSource("real", {session:imported.session});
@@ -268,16 +297,18 @@ function bindEvents() {
 }
 
 function switchSource(mode, {restore=false, session=null} = {}) {
-  const next = mode === "real" ? "real" : "ideal";
-  const record = next === "real" ? state.realRecord : state.idealRecord;
+  const next = mode === "clean" ? "clean" : mode === "real" ? "real" : "ideal";
+  const record = next === "clean" ? state.cleanRecord : next === "real" ? state.realRecord : state.idealRecord;
   if (!record) return;
 
   validateReferenceRecord(record);
   state.sourceMode = next;
   state.record = record;
   document.body.classList.toggle("source-ideal", next === "ideal");
+  document.body.classList.toggle("source-clean", next === "clean");
   document.body.classList.toggle("source-real", next === "real");
   el.idealSource.classList.toggle("active", next === "ideal");
+  el.cleanSource.classList.toggle("active", next === "clean");
   el.realSource.classList.toggle("active", next === "real");
 
   const restored = session || (restore ? restoreSession(next) : null);
@@ -294,6 +325,14 @@ function switchSource(mode, {restore=false, session=null} = {}) {
     state.measurementSignal = "raw";
     state.windowSeconds = 2;
     state.windowStartSeconds = 0.1;
+    state.showAnnotations = true;
+  } else if (next === "clean") {
+    state.baseline = Number(restored?.baseline_adc ?? record.recommended_baseline_mV ?? 0);
+    state.baselineStatus = "reference";
+    state.mode = "raw";
+    state.measurementSignal = "raw";
+    state.windowSeconds = 5;
+    state.windowStartSeconds = 0;
     state.showAnnotations = true;
   } else {
     state.baseline = Number(restored?.baseline_adc ?? record.adc?.zero?.[0] ?? 0);
@@ -316,6 +355,7 @@ function renderAll() {
   renderProvenance();
   renderMeasurements();
   renderBaselineReality();
+  renderCleanSelection();
   renderRrBridge();
   renderValidation();
   syncQuickWaveformButtons();
@@ -331,9 +371,13 @@ function syncControlsFromState() {
   el.windowLength.value = String(state.windowSeconds);
   el.showAnnotations.checked = state.showAnnotations;
   el.baselineInput.value = String(roundNumber(state.baseline, 4));
-  el.saveOffline.disabled = state.sourceMode !== "real";
+  el.saveOffline.disabled = state.sourceMode === "ideal";
   el.downloadValidation.disabled = state.sourceMode !== "real";
-  el.baselineHeading.textContent = state.sourceMode === "ideal" ? "Known baseline" : "Choose a local reference";
+  el.baselineHeading.textContent = state.sourceMode === "ideal"
+    ? "Known baseline"
+    : state.sourceMode === "clean"
+      ? "Annotated isoelectric reference"
+      : "Choose a local reference";
 }
 
 function initInterfaceMode() {
