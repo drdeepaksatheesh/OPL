@@ -7,6 +7,7 @@ on:
       - "site/**"
       - "scripts/prepare_ecgid_reference.py"
       - "scripts/prepare_ludb_clean_reference.py"
+      - "scripts/verify_ludb_clean_reference.py"
       - "scripts/verify_ecgid_reference.py"
       - "scripts/build_reference_site.py"
       - "scripts/build_paper1_ecg_app.py"
@@ -17,6 +18,7 @@ on:
       - "site/**"
       - "scripts/prepare_ecgid_reference.py"
       - "scripts/prepare_ludb_clean_reference.py"
+      - "scripts/verify_ludb_clean_reference.py"
       - "scripts/verify_ecgid_reference.py"
       - "scripts/build_reference_site.py"
       - "scripts/build_paper1_ecg_app.py"
@@ -59,6 +61,9 @@ jobs:
 
       - name: Select and prepare clean real LUDB Lead-II reference
         run: python scripts/prepare_ludb_clean_reference.py
+
+      - name: Verify clean LUDB selection
+        run: python scripts/verify_ludb_clean_reference.py
 
       - name: Run Reference Lab calculation, validation and teaching tests
         run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/ideal-ecg.test.mjs site/tests/teaching.test.mjs
