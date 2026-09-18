@@ -9,6 +9,7 @@ import {
   downloadJson
 } from "../../reference-lab-core.mjs";
 import {saveRecord, getRecord} from "../../offline-store.mjs";
+import {validateReferenceIntegrity, makeValidationReport} from "../../reference-validation.mjs";
 import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
 
 const BUNDLED_RECORD_URL = "./data/Person_01_rec_1.json";
@@ -41,7 +42,8 @@ const el = Object.fromEntries([
   "baselineInput","baselineZero","baselineMedian","baselineFromA","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
   "quickMode","advancedMode","quickBaselineMedian","teachingHint","provenanceDetails","provenanceSummary",
-  "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset"
+  "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
+  "validationPassed","validationTotal","validationChecks","downloadValidation"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -166,6 +168,17 @@ function bindEvents() {
     await saveRecord(state.record);
     persistSession();
     showStatus("Saved locally in this browser. The record can be reopened without downloading it again.");
+  });
+
+  el.downloadValidation.addEventListener("click", () => {
+    if (!state.record) return;
+    const report = makeValidationReport({
+      record: state.record,
+      oplVersion: window.OPL_CONFIG?.version,
+      oplCommit: state.buildInfo?.git_sha
+    });
+    downloadJson("OPL_ECG-ID_Person_01_rec_1_validation-report.json", report);
+    showStatus("Downloaded the source-integrity validation report for this exact OPL build.");
   });
 
   el.exportPackage.addEventListener("click", () => {
@@ -337,6 +350,7 @@ function loadRecord(record, session) {
   syncWindowControls();
   renderProvenance();
   renderMeasurements();
+  renderValidation();
   syncQuickWaveformButtons();
   draw();
 }
@@ -372,6 +386,32 @@ function renderProvenance() {
       : "<strong>" + escapeHtml(String(value ?? "—")) + "</strong>";
     return '<div class="provenance-item"><span>' + escapeHtml(label) + "</span>" + content + "</div>";
   }).join("");
+}
+
+function renderValidation() {
+  if (!state.record || !el.validationChecks) return;
+  const result = validateReferenceIntegrity(state.record);
+  el.validationPassed.textContent = result.passed + "/" + result.total;
+  el.validationTotal.textContent = result.all_passed ? "checks passed" : "checks";
+
+  el.validationChecks.innerHTML = result.checks.map(check => {
+    const cls = check.pass ? "pass" : "fail";
+    const status = check.pass ? "PASS" : "CHECK";
+    const observed = formatValidationValue(check.observed);
+    const expected = formatValidationValue(check.expected);
+    return '<div class="validation-check ' + cls + '">' +
+      '<div class="check-title"><span>' + escapeHtml(check.label) + '</span><span class="check-status">' + status + '</span></div>' +
+      '<p><strong>Observed:</strong> ' + escapeHtml(observed) + '<br><strong>Expected:</strong> ' + escapeHtml(expected) + '</p>' +
+      (check.note ? '<p>' + escapeHtml(check.note) + '</p>' : '') +
+      '</div>';
+  }).join("");
+}
+
+function formatValidationValue(value) {
+  if (Array.isArray(value)) return value.map(v => v == null ? "—" : String(v)).join(", ");
+  if (value == null) return "—";
+  if (typeof value === "number" && Number.isFinite(value)) return String(roundNumber(value, 6));
+  return String(value);
 }
 
 function renderMeasurements() {
