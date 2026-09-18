@@ -18,6 +18,20 @@ function Get-LanIPv4 {
     Select-Object -First 1
 }
 
+function Parse-Query([string]$QueryString) {
+  $Result = @{}
+  if ([string]::IsNullOrWhiteSpace($QueryString)) { return $Result }
+  $Text = $QueryString.TrimStart('?')
+  foreach ($Part in $Text.Split('&')) {
+    if ([string]::IsNullOrWhiteSpace($Part)) { continue }
+    $Pair = $Part.Split('=',2)
+    $Key = [System.Uri]::UnescapeDataString($Pair[0].Replace('+',' '))
+    $Value = if ($Pair.Length -gt 1) { [System.Uri]::UnescapeDataString($Pair[1].Replace('+',' ')) } else { '' }
+    $Result[$Key] = $Value
+  }
+  return $Result
+}
+
 function Get-MimeType([string]$Path) {
   switch ([System.IO.Path]::GetExtension($Path).ToLowerInvariant()) {
     '.html' { 'text/html; charset=utf-8' }
@@ -203,7 +217,7 @@ try {
       $RawTarget = $Parts[1]
       $Uri = [System.Uri]('http://localhost' + $RawTarget)
       $Path = [System.Uri]::UnescapeDataString($Uri.AbsolutePath)
-      $Query = [System.Web.HttpUtility]::ParseQueryString($Uri.Query)
+      $Query = Parse-Query $Uri.Query
 
       $BodyText = ''
       if ($Headers.ContainsKey('content-length')) {
