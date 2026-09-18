@@ -30,11 +30,13 @@ export const IDEAL_ECG_SPEC = Object.freeze({
     t_end_s: 0.34
   },
   teaching_measurements: {
+    p_wave_duration_ms: 80,
     pr_interval_ms: 155,
-    qrs_duration_ms: 90,
-    qt_interval_ms: 385,
     pr_segment_ms: 75,
+    qrs_duration_ms: 90,
     st_segment_ms: 135,
+    qt_interval_ms: 385,
+    t_wave_duration_ms: 160,
     rr_interval_ms: 800
   }
 });
@@ -142,4 +144,95 @@ function addGaussian(values, fs, centerSeconds, amplitude, sigmaSeconds) {
     const z = (i - center) / sigma;
     values[i] += amplitude * Math.exp(-0.5 * z * z);
   }
+}
+
+
+export const IDEAL_LANDMARK_LABELS = Object.freeze({
+  p_onset: "P onset",
+  p_peak: "P peak",
+  p_end: "P end",
+  qrs_onset: "QRS onset",
+  q: "Q",
+  r: "R",
+  s: "S",
+  qrs_end: "QRS end",
+  t_onset: "T onset",
+  t_peak: "T peak",
+  t_end: "T end"
+});
+
+const IDEAL_INTERVALS = Object.freeze({
+  "p_onset|p_end": ["P-wave duration", "p_wave_duration_ms"],
+  "p_onset|qrs_onset": ["PR interval", "pr_interval_ms"],
+  "p_end|qrs_onset": ["PR segment", "pr_segment_ms"],
+  "qrs_onset|qrs_end": ["QRS duration", "qrs_duration_ms"],
+  "qrs_end|t_onset": ["ST segment", "st_segment_ms"],
+  "qrs_onset|t_end": ["QT interval", "qt_interval_ms"],
+  "t_onset|t_end": ["T-wave duration", "t_wave_duration_ms"],
+  "r|r": ["RR interval", "rr_interval_ms"]
+});
+
+export function nearestIdealLandmark(record, sample, toleranceMs = 30) {
+  if (!record || !Number.isInteger(sample)) return null;
+  const fs = Number(record.sampling_rate_hz);
+  const toleranceSamples = Math.round((Number(toleranceMs) / 1000) * fs);
+  let best = null;
+
+  for (const beat of record.beats || []) {
+    for (const [key, landmarkSample] of Object.entries(beat.landmarks || {})) {
+      const distance = sample - Number(landmarkSample);
+      const absDistance = Math.abs(distance);
+      if (absDistance > toleranceSamples) continue;
+      if (!best || absDistance < best.abs_distance_samples) {
+        best = {
+          key,
+          label: IDEAL_LANDMARK_LABELS[key] || key,
+          sample: Number(landmarkSample),
+          beat_index: beat.index,
+          distance_samples: distance,
+          distance_ms: distance / fs * 1000,
+          abs_distance_samples: absDistance
+        };
+      }
+    }
+  }
+  return best;
+}
+
+export function interpretIdealCalipers(record, sampleA, sampleB, toleranceMs = 30) {
+  if (!record || !Number.isInteger(sampleA) || !Number.isInteger(sampleB)) {
+    return {a:null,b:null,measurement:null};
+  }
+
+  let a = nearestIdealLandmark(record, sampleA, toleranceMs);
+  let b = nearestIdealLandmark(record, sampleB, toleranceMs);
+
+  if (sampleA > sampleB) {
+    [a,b] = [b,a];
+    [sampleA,sampleB] = [sampleB,sampleA];
+  }
+
+  let measurement = null;
+  if (a && b) {
+    const sameBeat = a.beat_index === b.beat_index;
+    const adjacentR = a.key === "r" && b.key === "r" && b.beat_index === a.beat_index + 1;
+    const pairKey = a.key + "|" + b.key;
+    const definition = IDEAL_INTERVALS[pairKey];
+
+    if (definition && (sameBeat || adjacentR)) {
+      const [label, expectedKey] = definition;
+      const measuredMs = (sampleB - sampleA) / Number(record.sampling_rate_hz) * 1000;
+      const expectedMs = Number(IDEAL_ECG_SPEC.teaching_measurements[expectedKey]);
+      measurement = {
+        label,
+        expected_key: expectedKey,
+        measured_ms: measuredMs,
+        expected_ms: expectedMs,
+        error_ms: measuredMs - expectedMs,
+        endpoint_error_ms: Math.abs(a.distance_ms) + Math.abs(b.distance_ms)
+      };
+    }
+  }
+
+  return {a,b,measurement};
 }
