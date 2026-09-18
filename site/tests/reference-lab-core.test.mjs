@@ -48,9 +48,11 @@ test("export package round-trips record and session", () => {
     record,
     baseline: 7,
     calipers: {a:1,b:3},
-    oplVersion: "test"
+    oplVersion: "test",
+    oplCommit: "abc123"
   });
   const restored = importExportPackage(pkg);
+  assert.equal(pkg.opl.commit, "abc123");
   assert.equal(restored.record.record_id, record.record_id);
   assert.equal(restored.session.baseline_adc, 7);
   assert.deepEqual(restored.session.calipers, {a:1,b:3});
