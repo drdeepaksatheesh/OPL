@@ -884,7 +884,7 @@ function formatValidationValue(value){
 }
 
 function cssColor(name){
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#FFFFFF";
+  return getComputedStyle(document.body).getPropertyValue(name).trim() || "#FFFFFF";
 }
 
 function requireOk(response){if(!response.ok)throw new Error("HTTP "+response.status);return response}
