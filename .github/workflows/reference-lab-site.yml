@@ -10,7 +10,7 @@ on:
       - "scripts/build_reference_site.py"
       - ".github/workflows/reference-lab-site.yml"
   push:
-    branches: [publication-series, main]
+    branches: [main]
     paths:
       - "site/**"
       - "scripts/prepare_ecgid_reference.py"
@@ -18,6 +18,10 @@ on:
       - "scripts/build_reference_site.py"
       - ".github/workflows/reference-lab-site.yml"
   workflow_dispatch:
+
+concurrency:
+  group: reference-lab-site-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
