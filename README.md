@@ -16,6 +16,14 @@ New users should begin with docs/start_here.md.
 
 **OpenPhysiologyLab is not a diagnostic medical device.**
 
+## Current strategic direction
+
+OPL is moving to a **reference-first, hardware-agnostic** Phase 1: trusted open physiological datasets are used to build transparent browser-facing Reference Labs for visualization, measurement, teaching, and reproducible analysis. Live acquisition hardware remains a later integration layer rather than the identity of the platform.
+
+The standing research principles are **open-source, decentralized, reliable, reproducible**. See the account-wide [Open Research Charter](https://github.com/drdeepaksatheesh/drdeepaksatheesh.github.io/blob/main/OPEN_RESEARCH_CHARTER.md).
+
+The existing v0.1-alpha desktop/NPG Lite code remains an important experimental acquisition prototype, but it should not be read as the limit of OPL's scope.
+
 ---
 
 ## Current v0.1-alpha scope
