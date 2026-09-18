@@ -1,6 +1,7 @@
 param(
     [int]$StartPort = 8765,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$AllowLan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,7 +29,8 @@ $Listener = $null
 $Port = $StartPort
 while ($Port -lt ($StartPort + 30)) {
     try {
-        $Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+        $BindAddress = if ($AllowLan) { [System.Net.IPAddress]::Any } else { [System.Net.IPAddress]::Loopback }
+        $Listener = [System.Net.Sockets.TcpListener]::new($BindAddress, $Port)
         $Listener.Start()
         break
     } catch {
@@ -49,9 +51,21 @@ Write-Host ''
 Write-Host 'OpenPhysiologyLab ECG Reference Lab' -ForegroundColor Cyan
 Write-Host '-----------------------------------'
 Write-Host "Serving: $RootFull"
-Write-Host "Open:    $Url"
-Write-Host ''
-Write-Host 'This server listens only on this computer (127.0.0.1).' -ForegroundColor DarkGray
+Write-Host "Open on this PC: $Url"
+if ($AllowLan) {
+    $LanIp = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
+        Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and -not [System.Net.IPAddress]::IsLoopback($_) } |
+        Select-Object -First 1
+    if ($LanIp) {
+        $PhoneUrl = "http://$($LanIp.IPAddressToString):$Port/reference/ecg-id/index.html"
+        Write-Host "Open on phone:   $PhoneUrl" -ForegroundColor Green
+        Write-Host 'Phone and PC must be on the same local network. Windows Firewall may ask for permission.' -ForegroundColor Yellow
+    } else {
+        Write-Host 'Could not determine a LAN IPv4 address automatically.' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host 'This server listens only on this computer (127.0.0.1).' -ForegroundColor DarkGray
+}
 Write-Host 'Keep this window open while testing. Press Ctrl+C to stop.' -ForegroundColor Yellow
 Write-Host ''
 
