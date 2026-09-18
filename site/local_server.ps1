@@ -1,5 +1,6 @@
 param(
-    [int]$StartPort = 8765
+    [int]$StartPort = 8765,
+    [switch]$NoBrowser
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,7 +55,9 @@ Write-Host 'This server listens only on this computer (127.0.0.1).' -ForegroundC
 Write-Host 'Keep this window open while testing. Press Ctrl+C to stop.' -ForegroundColor Yellow
 Write-Host ''
 
-Start-Process $Url
+if (-not $NoBrowser) {
+    Start-Process $Url
+}
 
 try {
     while ($true) {
