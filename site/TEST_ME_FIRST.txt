@@ -1,0 +1,32 @@
+OpenPhysiologyLab ECG Reference Lab - test build
+
+QUICK START (Windows)
+1. Extract this ZIP to a normal folder.
+2. Double-click START_OPL_REFERENCE_LAB.cmd.
+3. Your browser should open the ECG Reference Lab automatically.
+4. Keep the command window open while testing. Ctrl+C stops the local server.
+
+WHAT TO TEST
+- ECG-ID provenance is visible at the top.
+- Raw / source-filtered / overlay display modes work.
+- 2 s / 5 s / 10 s / 20 s windows work.
+- Horizontal grid: 40 ms small box, 200 ms major division.
+- Vertical grid: select 20 / 50 / 100 / 200 delta-ADC per small box.
+- Move/choose baseline and confirm amplitude readouts change relative to it.
+- Click waveform for caliper A, then B; confirm delta-t is shown in ms.
+- Toggle source annotations.
+- "Save record offline" stores the reference record in the browser.
+- "Download OPL package" exports waveform + provenance + current measurements.
+- Re-open that JSON with "Open saved package".
+
+IMPORTANT
+This is an educational/research prototype, not a diagnostic ECG device.
+The ECG-ID source-provided annotations are automated and unaudited.
+
+DATA SOURCE
+ECG-ID Database v1.0.0, PhysioNet
+DOI: 10.13026/C2J01F
+License: Open Data Commons Attribution License v1.0
+Reference record: Person_01 / rec_1
+
+This test build was generated from the OPL publication-series workflow.
