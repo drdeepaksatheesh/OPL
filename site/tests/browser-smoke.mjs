@@ -36,13 +36,27 @@ try {
     const box = await canvas.boundingBox();
     assert.ok(box && box.width > 250 && box.width <= 390);
 
-    await canvas.tap({position: {x: box.width * 0.38, y: box.height * 0.5}});
-    await canvas.tap({position: {x: box.width * 0.58, y: box.height * 0.5}});
+    // Visible window is 0.1–2.1 s. Aim near P onset (~1.0 s) and QRS onset (~1.155 s)
+    // of the second complete beat so the guided calipers should identify a PR interval.
+    await canvas.tap({position: {x: box.width * 0.45, y: box.height * 0.5}});
+    await canvas.tap({position: {x: box.width * 0.5275, y: box.height * 0.5}});
     const idealMeasurement = await page.locator("#measurementGrid").innerText();
     assert.match(idealMeasurement, /mV/);
     assert.match(idealMeasurement, /Δt/);
+    const assist = await page.locator("#measurementAssist").innerText();
+    assert.match(assist, /PR interval/);
+    assert.match(assist, /model 155/);
 
     await page.screenshot({path: out + "/mobile-ideal.png", fullPage: true});
+
+    await page.locator("#cleanSource").tap();
+    await page.waitForTimeout(100);
+    assert.match((await page.getAttribute("body","class")) || "", /source-clean/);
+    const cleanPlotLegend = await page.locator(".plot-card .legend").innerText();
+    assert.match(cleanPlotLegend, /Clean real Lead II/);
+    const cleanBaseline = await page.locator("#baselineRealityText").innerText();
+    assert.match(cleanBaseline, /cardiologist-delineated PR and TP segments/i);
+    await page.screenshot({path: out + "/mobile-clean.png", fullPage: true});
 
     await page.locator("#realSource").tap();
     await page.waitForTimeout(100);
