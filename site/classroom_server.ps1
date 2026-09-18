@@ -92,6 +92,7 @@ function Public-State {
     phase = $State.phase
     section = $State.section
     live_question_id = $State.live_question_id
+    reference_view = $State.reference_view
     participants = $ParticipantValues
     questionnaire = [pscustomobject]@{
       path = 'questionnaires/ecg-reference-v0.1.json'
@@ -140,6 +141,7 @@ $State = [ordered]@{
   phase = 'pre'
   section = $null
   live_question_id = $null
+  reference_view = $null
 }
 $Participants = @{}
 $Events = New-Object System.Collections.ArrayList
@@ -296,6 +298,9 @@ try {
             $Old = $State.live_question_id
             $State.live_question_id = $null
             [void](New-Event 'live_question_closed' $null ([string]$State.section.id) @{ question_id=$Old } $null)
+          }
+          'set_reference_view' {
+            $State.reference_view = $Payload.reference_view
           }
           'set_questionnaire' {
             $CandidateQuestionnaire = $Payload.questionnaire
