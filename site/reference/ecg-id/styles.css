@@ -416,3 +416,17 @@ body.mode-teaching .provenance-details[open] summary{margin-bottom:8px}
   .stage-navigation{display:grid;grid-template-columns:1fr}
   .stage-navigation button{width:100%}
 }
+
+.measurement-assist{
+  margin-top:10px;
+  padding:10px 11px;
+  border:1px solid var(--border-soft);
+  border-radius:9px;
+  background:var(--group-bg);
+  color:var(--text-secondary);
+  font-size:.8rem;
+}
+.measurement-assist:empty{display:none}
+.measurement-assist strong{color:var(--gold)}
+.measurement-assist .good{color:var(--emerald)}
+.measurement-assist .warn{color:var(--gold)}
