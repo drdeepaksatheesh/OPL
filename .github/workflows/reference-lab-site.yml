@@ -1,0 +1,73 @@
+name: Reference Lab site
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/prepare_ecgid_reference.py"
+      - "scripts/verify_ecgid_reference.py"
+      - "scripts/build_reference_site.py"
+      - ".github/workflows/reference-lab-site.yml"
+  push:
+    branches: [publication-series, main]
+    paths:
+      - "site/**"
+      - "scripts/prepare_ecgid_reference.py"
+      - "scripts/verify_ecgid_reference.py"
+      - "scripts/build_reference_site.py"
+      - ".github/workflows/reference-lab-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-reference-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install reference-build dependencies
+        run: python -m pip install --upgrade "wfdb>=4.1,<5" "Pillow>=10,<12"
+
+      - name: Fetch frozen ECG-ID reference record
+        run: python scripts/prepare_ecgid_reference.py --person Person_01 --record rec_1
+
+      - name: Verify source-derived reference package
+        run: python scripts/verify_ecgid_reference.py
+
+      - name: Run Reference Lab calculation tests
+        run: node --test site/tests/reference-lab-core.test.mjs
+
+      - name: Build offline-capable static site
+        run: python scripts/build_reference_site.py
+
+      - name: Confirm key build outputs
+        run: |
+          test -f build/opl-site/reference/ecg-id/data/Person_01_rec_1.json
+          test -f build/opl-site/icons/icon-192.png
+          test -f build/opl-site/icons/icon-512.png
+          test -f build/opl-reference-lab-static.zip
+
+      - name: Upload downloadable Reference Lab build
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: |
+            build/opl-site
+            build/opl-reference-lab-static.zip
+          if-no-files-found: error
+          retention-days: 30
