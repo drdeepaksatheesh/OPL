@@ -68,3 +68,6 @@ footer{width:min(1220px,calc(100% - 28px));margin:0 auto 30px;color:#697985;font
   .card{padding:13px}
   .mini-trace{height:220px}
 }
+
+.file-picker{display:inline-flex;align-items:center;border:1px solid #c9d5de;background:#fff;color:#173b57;border-radius:10px;padding:9px 12px;font-weight:750;cursor:pointer}
+.file-picker input{display:none}
