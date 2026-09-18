@@ -1,0 +1,62 @@
+{
+  "project": "OpenPhysiologyLab",
+  "tagline": "Record. Analyse. Understand.",
+  "modules": [
+    {
+      "id": "recorder",
+      "name": "OPL Recorder",
+      "area": "Acquisition",
+      "status": "development",
+      "summary": "Low-friction physiological signal acquisition with metadata and inspectable exports."
+    },
+    {
+      "id": "calibration",
+      "name": "OPL Calibration Bench",
+      "area": "Validation",
+      "status": "planned-public-beta",
+      "summary": "Transparent calibration and signal-chain checks for low-cost physiological acquisition hardware."
+    },
+    {
+      "id": "ecg-calipers",
+      "name": "OPL ECG Calipers",
+      "area": "ECG",
+      "status": "development",
+      "summary": "Interactive ECG measurement and morphology/conduction teaching."
+    },
+    {
+      "id": "cardiac-chart",
+      "name": "OPL Cardiac Chart",
+      "area": "Cardiac physiology",
+      "status": "planned",
+      "summary": "Synchronised visual teaching of electrical and mechanical events of the cardiac cycle."
+    },
+    {
+      "id": "rr-lab",
+      "name": "OPL RR Lab",
+      "area": "HRV",
+      "status": "planned",
+      "summary": "RR pairs and triplets as a visual bridge to beat-to-beat variability."
+    },
+    {
+      "id": "visual-hrv",
+      "name": "OPL Visual HRV",
+      "area": "HRV",
+      "status": "planned",
+      "summary": "Interactive visualisation of NN intervals, time-domain HRV and Poincaré geometry."
+    },
+    {
+      "id": "open-cardiac-anatomy",
+      "name": "Open Cardiac Anatomy",
+      "area": "Anatomy + physiology",
+      "status": "planned",
+      "summary": "A standalone interactive teaching instrument for cardiac structure-function relationships."
+    },
+    {
+      "id": "experimental-heart",
+      "name": "OPL Experimental Heart Lab",
+      "area": "Experimental physiology",
+      "status": "planned",
+      "summary": "Experimental cardiac physiology teaching built around validated protocols and real-data linkage."
+    }
+  ]
+}
