@@ -226,3 +226,162 @@ jobs:
           path: build/browser-smoke
           if-no-files-found: error
           retention-days: 30
+
+
+  classroom-loop-smoke:
+    runs-on: windows-latest
+    needs: build-reference-lab
+    timeout-minutes: 8
+    steps:
+      - name: Download exact built OPL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: artifact
+
+      - name: Start classroom server and simulate teacher/student loop
+        shell: powershell
+        run: |
+          $site = Resolve-Path 'artifact/opl-site'
+          $serverScript = Join-Path $site 'classroom_server.ps1'
+          $stdout = Join-Path $env:RUNNER_TEMP 'opl-classroom.out'
+          $stderr = Join-Path $env:RUNNER_TEMP 'opl-classroom.err'
+
+          $server = Start-Process powershell.exe -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $serverScript,
+            '-StartPort', '8780',
+            '-NoBrowser'
+          ) -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+
+          try {
+            $teacherUrl = $null
+            $joinCode = $null
+            for ($i=0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 500
+              if (Test-Path $stdout) {
+                $text = Get-Content $stdout -Raw
+                $teacherMatch = [regex]::Match($text, 'Teacher dashboard:\s+(http://[^\r\n]+)')
+                $codeMatch = [regex]::Match($text, 'Join code:\s+(\d{6})')
+                if ($teacherMatch.Success) { $teacherUrl = $teacherMatch.Groups[1].Value.Trim() }
+                if ($codeMatch.Success) { $joinCode = $codeMatch.Groups[1].Value.Trim() }
+                if ($teacherUrl -and $joinCode) { break }
+              }
+              if ($server.HasExited) {
+                if (Test-Path $stderr) { Get-Content $stderr }
+                throw 'Classroom server exited before becoming ready.'
+              }
+            }
+
+            if (-not $teacherUrl -or -not $joinCode) {
+              Get-Content $stdout
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw 'Could not parse classroom teacher URL / join code.'
+            }
+
+            $teacherUri = [uri]$teacherUrl
+            $query = [System.Web.HttpUtility]::ParseQueryString($teacherUri.Query)
+            $teacherToken = $query['teacher']
+            $base = 'http://127.0.0.1:8780'
+            $teacherHeaders = @{'X-OPL-Teacher-Token'=$teacherToken}
+
+            $teacherPage = Invoke-WebRequest -UseBasicParsing ($base + '/classroom/teacher.html') -TimeoutSec 5
+            if ($teacherPage.StatusCode -ne 200 -or $teacherPage.Content -notmatch 'OPL Classroom') {
+              throw 'Teacher page failed to load.'
+            }
+
+            $joinBody = @{join_code=$joinCode;label='CI Student'} | ConvertTo-Json -Compress
+            $join = Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/join') -ContentType 'application/json' -Body $joinBody
+            $pid = $join.participant_id
+            if (-not $pid) { throw 'Student join did not return participant id.' }
+
+            $preBody = @{
+              participant_id=$pid
+              type='pretest_completed'
+              client_time=[DateTime]::UtcNow.ToString('o')
+              section_id=$null
+              payload=@{
+                questionnaire_id='ecg-reference-classroom-v0.1'
+                responses=@{
+                  pre_sample_time=2
+                  pre_source_filtered=1
+                  pre_baseline=1
+                }
+              }
+            } | ConvertTo-Json -Depth 10 -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/event') -ContentType 'application/json' -Body $preBody | Out-Null
+
+            $section = @{
+              id='baseline'
+              title='Choose a baseline'
+              prompt='CI teaching section'
+              window_start_s=5
+              window_length_s=5
+              waveform='filtered'
+            }
+            $sectionBody = @{type='set_section';section=$section} | ConvertTo-Json -Depth 10 -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $sectionBody | Out-Null
+
+            $studentState = Invoke-RestMethod -Uri ($base + '/classroom/api/student/state?participant_id=' + $pid)
+            if ($studentState.state.phase -ne 'teach' -or $studentState.state.section.id -ne 'baseline') {
+              throw 'Student did not receive teacher section state.'
+            }
+
+            $doubtBody = @{
+              participant_id=$pid
+              type='doubt_submitted'
+              client_time=[DateTime]::UtcNow.ToString('o')
+              section_id='baseline'
+              payload=@{text='Where exactly should I place the baseline?'}
+            } | ConvertTo-Json -Depth 10 -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/event') -ContentType 'application/json' -Body $doubtBody | Out-Null
+
+            $liveOpen = @{type='open_live_question';question_id='live_filtering'} | ConvertTo-Json -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $liveOpen | Out-Null
+
+            $liveBody = @{
+              participant_id=$pid
+              type='live_response'
+              client_time=[DateTime]::UtcNow.ToString('o')
+              section_id='baseline'
+              payload=@{question_id='live_filtering';answer=0}
+            } | ConvertTo-Json -Depth 10 -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/event') -ContentType 'application/json' -Body $liveBody | Out-Null
+
+            $postPhase = @{type='set_phase';phase='post'} | ConvertTo-Json -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/teacher/action') -Headers $teacherHeaders -ContentType 'application/json' -Body $postPhase | Out-Null
+
+            $postBody = @{
+              participant_id=$pid
+              type='posttest_completed'
+              client_time=[DateTime]::UtcNow.ToString('o')
+              section_id='baseline'
+              payload=@{
+                questionnaire_id='ecg-reference-classroom-v0.1'
+                responses=@{
+                  post_sample_time=1
+                  post_source_filtered=0
+                  post_baseline=1
+                }
+              }
+            } | ConvertTo-Json -Depth 10 -Compress
+            Invoke-RestMethod -Method Post -Uri ($base + '/classroom/api/event') -ContentType 'application/json' -Body $postBody | Out-Null
+
+            $export = Invoke-RestMethod -Uri ($base + '/classroom/api/export') -Headers $teacherHeaders
+            $types = @($export.events | ForEach-Object {$_.type})
+            foreach ($required in @('participant_joined','pretest_completed','activity_changed','doubt_submitted','live_question_opened','live_response','posttest_completed')) {
+              if ($types -notcontains $required) { throw ('Missing classroom event: ' + $required) }
+            }
+            if ($export.state.participants.Count -ne 1) { throw 'Unexpected participant count.' }
+            if (-not $export.state.participants[0].pretest_completed -or -not $export.state.participants[0].posttest_completed) {
+              throw 'Pre/post completion state was not preserved.'
+            }
+
+            Write-Host 'Teacher/student classroom loop smoke test passed.'
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
