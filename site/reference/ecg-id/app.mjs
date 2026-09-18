@@ -111,6 +111,18 @@ function bindEvents() {
   el.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 
   el.idealSource.addEventListener("click", () => switchSource("ideal", {restore:true}));
+  el.nextToClean?.addEventListener("click", () => {
+    switchSource("clean", {restore:true});
+    scrollToLab();
+  });
+  el.nextToImperfect?.addEventListener("click", () => {
+    switchSource("real", {restore:true});
+    scrollToLab();
+  });
+  el.backToClean?.addEventListener("click", () => {
+    switchSource("clean", {restore:true});
+    scrollToLab();
+  });
   el.cleanSource.addEventListener("click", () => {
     if (!state.cleanRecord) {
       showStatus("The clean LUDB reference is unavailable in this build.", true);
@@ -383,7 +395,7 @@ function syncControlsFromState() {
 function initInterfaceMode() {
   let saved = null;
   try { saved = localStorage.getItem(MODE_KEY); } catch {}
-  const defaultMode = window.matchMedia("(max-width: 800px)").matches ? "teaching" : "advanced";
+  const defaultMode = "teaching";
   setInterfaceMode(saved === "teaching" || saved === "advanced" ? saved : defaultMode, false);
 }
 
@@ -1073,6 +1085,10 @@ function updateLogicPath(){
   steps.forEach((node,index)=>{
     node.classList.toggle("active", index===activeIndex);
   });
+}
+
+function scrollToLab(){
+  document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 function buildLabel(){
