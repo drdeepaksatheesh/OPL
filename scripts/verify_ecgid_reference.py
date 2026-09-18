@@ -24,7 +24,7 @@ def main():
     assert data["annotation_summary"]["annotation_events"] == len(data["annotations"])
     assert len(data["annotations"]) >= 10
     symbols = [item.get("symbol") for item in data["annotations"]]
-    assert "T" in symbols
+    assert "N" in symbols\n    assert "t" in symbols
     assert data["provenance"]["doi"] == "10.13026/C2J01F"
     assert data["provenance"]["license"] == "Open Data Commons Attribution License v1.0"
 
