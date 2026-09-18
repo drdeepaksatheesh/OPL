@@ -5,8 +5,8 @@
   "start_url": "./reference/ecg-id/index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f8fb",
-  "theme_color": "#173b57",
+  "background_color": "#050608",
+  "theme_color": "#050608",
   "prefer_related_applications": false,
   "icons": [
     {
