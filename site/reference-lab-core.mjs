@@ -37,13 +37,14 @@ export function validateReferenceRecord(record) {
   return true;
 }
 
-export function makeExportPackage({record, baseline, calipers, oplVersion}) {
+export function makeExportPackage({record, baseline, calipers, oplVersion, oplCommit}) {
   validateReferenceRecord(record);
   return {
     schema: "org.openphysiologylab.reference-package/v1",
     exported_at_utc: new Date().toISOString(),
     opl: {
-      version: oplVersion || "unknown"
+      version: oplVersion || "unknown",
+      commit: oplCommit || "unknown"
     },
     provenance: record.provenance,
     record: {
