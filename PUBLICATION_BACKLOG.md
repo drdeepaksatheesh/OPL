@@ -16,34 +16,25 @@ Prefer work that:
 
 ---
 
-## Tier A — build first
+## Tier A — build first: reference physiology
 
-### A1. OPL Calibration Bench / Recorder
+### A1. OPL ECG Reference Lab
 
-**Minimum publishable unit:** reproducible low-cost acquisition and calibration workflow.
+**Minimum publishable unit:** a browser-accessible ECG teaching and analysis workflow benchmarked against trusted public reference datasets.
 
-**Why first:** every later physiological measurement depends on knowing what the acquisition chain is actually doing.
+**Why first:** ECG provides unusually strong open datasets with calibrated waveforms, expert beat annotations, raw-versus-filtered examples, and waveform delineation. It allows OPL to establish its software, visualization, measurement, and provenance model without requiring new subject recruitment or new hardware.
 
-**Abstract-ready evidence:**
-- two NPG Lite units;
-- known input signals;
-- amplitude scaling;
-- sampling/timing characterization;
-- clipping/headroom behavior;
-- within-device repeatability;
-- between-device agreement;
-- raw-data integrity.
-
-**Full-paper expansion:**
-- reference acquisition comparison;
-- longer recordings;
-- additional amplitudes/frequencies;
-- ECG simulator or biological signal;
-- inter-laboratory replication.
+**Core evidence:**
+- ECG-ID for raw-versus-filtered understanding;
+- PTB-XL for physical-unit and multilead handling;
+- MIT-BIH for R-peak/RR benchmarking;
+- LUDB later for waveform delineation;
+- fixed analysis version and predeclared benchmark rules;
+- transparent reporting of failures as well as successes.
 
 **Possible paper framing:**
 
-> A reproducible calibration and quality-control workflow for low-cost physiological signal acquisition using NPG Lite and OpenPhysiologyLab
+> OpenPhysiologyLab ECG: design and reference-dataset validation of a transparent, baseline-relative ECG teaching and analysis workflow
 
 ---
 
@@ -69,7 +60,26 @@ Prefer work that:
 
 ---
 
-### A3. OPL Cardiac Chart
+### A3. OPL PPG & Pulse Transit Lab
+
+**Minimum publishable unit:** transparent visual analysis of trusted ECG + PPG reference recordings from pulse morphology through pulse-arrival/transit timing.
+
+**Independent value:** introduces vascular timing and optical pulse physiology rather than extending ECG morphology.
+
+**Potential evidence:**
+- raw multi-site PPG;
+- synchronized ECG;
+- motion/contact-pressure context;
+- reference timing/annotations where available;
+- numerical cross-checks against published definitions.
+
+**Possible paper framing:**
+
+> A visual reference-data laboratory for teaching photoplethysmography and cardiovascular pulse timing
+
+---
+
+### A4. OPL Cardiac Chart
 
 **Minimum publishable unit:** synchronized interactive cardiac-cycle timeline.
 
@@ -118,6 +128,28 @@ Potential outputs:
 - teaching-tool abstract;
 - measurement-agreement study;
 - later ECG morphology/conduction teaching paper.
+
+---
+
+## Tier C — hardware acquisition and experimental physiology
+
+### C0. OPL Calibration Bench / Recorder
+
+**Deferred until the reference-data platform is mature enough to justify hardware funding and acquisition studies.**
+
+Scientific contribution:
+- low-cost acquisition;
+- sampling/timing integrity;
+- clipping/headroom;
+- device-to-device repeatability;
+- optional physical calibration;
+- integration of live recordings into already validated Reference Labs.
+
+This becomes a stronger paper because it plugs hardware into an established analysis environment rather than trying to validate hardware and software simultaneously.
+
+Possible framing:
+
+> Low-cost ECG acquisition with NPG Lite and OpenPhysiologyLab: device characterization, reproducibility and implementation for physiology education
 
 ---
 
@@ -210,7 +242,7 @@ The abstract is not the end product. It is a timestamped scholarly waypoint.
 
 The intended sequence should become visible in the literature:
 
-**measurement chain → calibration → recording → visual signal interpretation → beat-to-beat variability → HRV → integrated cardiac physiology → multimodal physiology**
+**trusted reference data → transparent visual analysis → reproducible physiology → independent Reference Labs → integrated OPL → acquisition validation → live experimental physiology**
 
 Each paper should make sense alone.
 
