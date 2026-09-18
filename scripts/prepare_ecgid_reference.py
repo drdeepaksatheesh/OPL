@@ -120,6 +120,11 @@ def main() -> None:
             "filtered": filtered,
         },
         "annotations": annotations,
+        "annotation_summary": {
+            "source_description": "10 annotated beats with automated R- and T-wave peak markers",
+            "annotated_beats": 10,
+            "annotation_events": len(annotations),
+        },
         "source_comments": scalar_list(record.comments) or [],
         "source_files": source_files,
         "provenance": {
@@ -136,6 +141,7 @@ def main() -> None:
 
     output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {output} ({output.stat().st_size} bytes)")
+    print(f"Annotation events: {len(annotations)} for 10 source-annotated beats")
 
 
 if __name__ == "__main__":
