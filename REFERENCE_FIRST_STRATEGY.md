@@ -164,3 +164,10 @@ Where redistribution is not permitted, OPL should link to or fetch from the auth
 Where redistribution is permitted, OPL may bundle selected examples while preserving the original license and attribution requirements.
 
 The OPL source code for released Reference Labs should remain openly inspectable and versioned so that the visualization and analysis can be independently reproduced.
+
+
+## Shared open research principles
+
+OPL follows the account-wide [Open Research Charter](https://github.com/drdeepaksatheesh/drdeepaksatheesh.github.io/blob/main/OPEN_RESEARCH_CHARTER.md): **open-source, decentralized, reliable, reproducible**.
+
+The Reference Lab architecture is the physiology-specific implementation of those principles: openly inspectable analysis, hardware-agnostic inputs, reference-dataset benchmarking, visible provenance, and frozen paper-linked releases.
