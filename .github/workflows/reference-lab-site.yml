@@ -262,11 +262,13 @@ jobs:
               Start-Sleep -Milliseconds 500
               if (Test-Path $stdout) {
                 $text = Get-Content $stdout -Raw
-                $teacherMatch = [regex]::Match($text, 'Teacher dashboard:\s+(http://[^\r\n]+)')
-                $codeMatch = [regex]::Match($text, 'Join code:\s+(\d{6})')
-                if ($teacherMatch.Success) { $teacherUrl = $teacherMatch.Groups[1].Value.Trim() }
-                if ($codeMatch.Success) { $joinCode = $codeMatch.Groups[1].Value.Trim() }
-                if ($teacherUrl -and $joinCode) { break }
+                if (-not [string]::IsNullOrWhiteSpace($text)) {
+                  $teacherMatch = [regex]::Match($text, 'Teacher dashboard:\s+(http://[^\r\n]+)')
+                  $codeMatch = [regex]::Match($text, 'Join code:\s+(\d{6})')
+                  if ($teacherMatch.Success) { $teacherUrl = $teacherMatch.Groups[1].Value.Trim() }
+                  if ($codeMatch.Success) { $joinCode = $codeMatch.Groups[1].Value.Trim() }
+                  if ($teacherUrl -and $joinCode) { break }
+                }
               }
               if ($server.HasExited) {
                 if (Test-Path $stderr) { Get-Content $stderr }
