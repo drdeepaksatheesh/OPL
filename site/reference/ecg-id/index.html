@@ -52,6 +52,16 @@
         </div>
 
         <div class="control-group">
+          <label for="verticalGrid">Vertical small box</label>
+          <select id="verticalGrid">
+            <option value="20">20 ΔADC</option>
+            <option value="50" selected>50 ΔADC</option>
+            <option value="100">100 ΔADC</option>
+            <option value="200">200 ΔADC</option>
+          </select>
+        </div>
+
+        <div class="control-group">
           <label for="windowLength">Window</label>
           <select id="windowLength">
             <option value="2">2 s</option>
@@ -77,6 +87,7 @@
           <span><i class="raw-swatch"></i> Raw ECG</span>
           <span><i class="filtered-swatch"></i> Source filtered ECG</span>
           <span><i class="baseline-swatch"></i> Selected baseline</span>
+          <span id="gridScale">Small box: 40 ms × 50 ΔADC</span>
         </div>
         <canvas id="ecgCanvas" aria-label="Interactive ECG waveform"></canvas>
         <p class="canvas-help">Click the trace to place caliper A, then B. A third click starts again at A. Measurements use source samples, not screen pixels.</p>
