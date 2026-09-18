@@ -358,3 +358,61 @@ body.source-real .clean-only{display:none!important}
   .quiz-actions{flex-direction:column}
   .quiz-actions button{width:100%}
 }
+
+
+/* Teaching-first hierarchy refinements */
+.topbar{padding-top:20px;padding-bottom:20px;align-items:center}
+.topbar h1{font-size:clamp(1.9rem,3.8vw,3rem);max-width:720px}
+.logic-path{
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:8px;
+}
+.logic-arrow{display:none}
+.logic-step{min-height:68px}
+.source-switcher{position:relative}
+.compact-ideal{
+  grid-template-columns:.9fr 1.1fr;
+  padding:13px 15px;
+  margin:10px 0;
+}
+.compact-ideal-copy h2{font-size:1.02rem;margin:0}
+.compact-ideal-copy p:not(.section-kicker){margin:.35rem 0 0;font-size:.8rem}
+.compact-ideal .ideal-metrics{grid-template-columns:repeat(6,minmax(0,1fr));align-content:center}
+.compact-ideal .ideal-metrics div{padding:7px 8px}
+.compact-ideal .ideal-metrics strong{font-size:.82rem}
+.provenance{margin-top:12px}
+.provenance-details:not([open]) summary{margin-bottom:0}
+.stage-navigation{
+  display:flex;justify-content:flex-end;gap:8px;margin-top:12px
+}
+.stage-next{
+  border-color:var(--gold);
+  color:#050608;
+  background:var(--gold);
+}
+.stage-next:hover{color:#050608;filter:brightness(1.08)}
+.stage-back{color:var(--text-secondary)}
+body.mode-teaching .provenance{
+  grid-template-columns:1fr;
+  padding:11px 13px;
+}
+body.mode-teaching .provenance>div:first-child{display:none}
+body.mode-teaching .provenance-details summary{display:flex}
+body.mode-teaching .provenance-details[open] summary{margin-bottom:8px}
+
+@media(max-width:850px){
+  .logic-path{
+    display:flex;
+    overflow-x:auto;
+    scroll-snap-type:x proximity;
+    padding-bottom:4px;
+  }
+  .logic-step{min-width:170px;scroll-snap-align:start}
+  .compact-ideal{grid-template-columns:1fr}
+  .compact-ideal .ideal-metrics{grid-template-columns:repeat(3,1fr)}
+}
+@media(max-width:520px){
+  .compact-ideal .ideal-metrics{grid-template-columns:1fr 1fr}
+  .stage-navigation{display:grid;grid-template-columns:1fr}
+  .stage-navigation button{width:100%}
+}
