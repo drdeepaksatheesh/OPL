@@ -84,13 +84,14 @@ try {
     await page.waitForSelector("#ecgCanvas");
 
     const bodyClass = await page.getAttribute("body", "class");
-    assert.match(bodyClass || "", /mode-advanced/);
+    assert.match(bodyClass || "", /mode-teaching/);
     assert.match(bodyClass || "", /theme-dark/);
     assert.match(bodyClass || "", /source-ideal/);
-    assert.equal(await page.locator(".controls").isVisible(), true);
+    assert.equal(await page.locator(".controls").isVisible(), false);
 
     const canvas = await page.locator("#ecgCanvas").boundingBox();
     assert.ok(canvas && canvas.width > 900);
+    assert.equal(await page.locator("#nextToClean").isVisible(), true);
     await page.screenshot({path: out + "/desktop-ideal.png", fullPage: true});
 
     await page.locator("#realSource").click();
