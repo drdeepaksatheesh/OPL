@@ -8,6 +8,16 @@ OpenPhysiologyLab is being developed as an open-source physiology teaching and r
 
 The roadmap is intentionally staged. Each release should provide a working vertical slice rather than a large unfinished promise.
 
+## Strategic update — reference-first
+
+The acquisition-first milestones below document the original desktop development path and remain useful engineering history.
+
+The active scientific/publication direction is now **reference-first**:
+
+trusted open data → transparent visual analysis → reproducible physiology → Reference Labs → integrated OPL → hardware acquisition/experimental integration.
+
+This keeps Phase 1 globally reproducible and hardware-agnostic while preserving NPG Lite and other acquisition systems as later input sources. The account-wide standard is [open-source, decentralized, reliable, reproducible](https://github.com/drdeepaksatheesh/drdeepaksatheesh.github.io/blob/main/OPEN_RESEARCH_CHARTER.md).
+
 
 
 \---
