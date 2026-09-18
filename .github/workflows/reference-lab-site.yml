@@ -132,12 +132,48 @@ jobs:
             if (-not (Test-Path (Join-Path $site 'START_OPL_REFERENCE_LAB.cmd'))) {
               throw 'One-click Windows launcher missing from built artifact.'
             }
+            if (-not (Test-Path (Join-Path $site 'START_OPL_PHONE_TEST.cmd'))) {
+              throw 'Phone-test launcher missing from built artifact.'
+            }
 
-            Write-Host 'Windows artifact launcher/server smoke test passed.'
+            Write-Host 'Windows local-only launcher/server smoke test passed.'
           }
           finally {
             if ($server -and -not $server.HasExited) {
               Stop-Process -Id $server.Id -Force
+            }
+          }
+
+          $lanServer = Start-Process powershell.exe -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $serverScript,
+            '-StartPort', '8766',
+            '-NoBrowser',
+            '-AllowLan'
+          ) -PassThru -WindowStyle Hidden
+
+          try {
+            $lanReady = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $lanResponse = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8766/reference/ecg-id/index.html' -TimeoutSec 2
+                if ($lanResponse.StatusCode -eq 200 -and $lanResponse.Content -match 'ECG Reference Lab') {
+                  $lanReady = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $lanReady) {
+              throw 'Windows LAN-capable OPL server did not become ready.'
+            }
+            Write-Host 'Windows LAN-capable phone-test server smoke test passed.'
+          }
+          finally {
+            if ($lanServer -and -not $lanServer.HasExited) {
+              Stop-Process -Id $lanServer.Id -Force
             }
           }
 
