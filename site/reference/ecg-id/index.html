@@ -18,12 +18,30 @@
       <p class="subtitle">Trusted data → visible processing → baseline-relative measurement.</p>
     </div>
     <div class="top-actions">
+      <div class="mode-switch" role="group" aria-label="OPL interface mode">
+        <button id="quickMode" class="mode-button" type="button" aria-pressed="false">Teaching</button>
+        <button id="advancedMode" class="mode-button" type="button" aria-pressed="false">Advanced</button>
+      </div>
       <button data-install-opl hidden>Install OPL</button>
       <span class="online-state" id="onlineState">Checking data…</span>
     </div>
   </header>
 
   <main>
+    <section class="mobile-intro teaching-only">
+      <div>
+        <p class="section-kicker">PHONE TEACHING MODE</p>
+        <h2>Learn from the trace</h2>
+        <p>Move through the ECG in short steps: compare raw and filtered data, choose a baseline, measure the trace, then answer a few questions.</p>
+      </div>
+      <div class="lesson-progress" aria-label="Teaching steps">
+        <span class="lesson-dot active" data-lesson-dot="1">1</span>
+        <span class="lesson-dot" data-lesson-dot="2">2</span>
+        <span class="lesson-dot" data-lesson-dot="3">3</span>
+        <span class="lesson-dot" data-lesson-dot="4">4</span>
+      </div>
+    </section>
+
     <section class="provenance" aria-labelledby="source-heading">
       <div>
         <p class="section-kicker">VISIBLE ACKNOWLEDGEMENT</p>
@@ -32,8 +50,23 @@
       <div id="provenanceGrid" class="provenance-grid" aria-live="polite"></div>
     </section>
 
+    <section class="quick-toolbar teaching-only" aria-label="Teaching controls">
+      <div class="quick-step">
+        <span class="step-number">1</span>
+        <div>
+          <strong>Compare the signal</strong>
+          <span>Switch between the original digital recording and the filtered channel supplied by the dataset.</span>
+        </div>
+      </div>
+      <div class="segmented" role="group" aria-label="Quick waveform display">
+        <button type="button" data-quick-waveform="raw">Raw</button>
+        <button type="button" data-quick-waveform="filtered">Filtered</button>
+        <button type="button" data-quick-waveform="overlay" class="active">Overlay</button>
+      </div>
+    </section>
+
     <section class="workspace">
-      <div class="controls">
+      <div class="controls advanced-only">
         <div class="control-group">
           <label for="waveformMode">Display</label>
           <select id="waveformMode">
@@ -90,11 +123,15 @@
           <span id="gridScale">Small box: 40 ms × 50 ΔADC</span>
         </div>
         <canvas id="ecgCanvas" aria-label="Interactive ECG waveform"></canvas>
-        <p class="canvas-help">Click the trace to place caliper A, then B. A third click starts again at A. Measurements use source samples, not screen pixels.</p>
+        <p class="canvas-help advanced-only">Click the trace to place caliper A, then B. A third click starts again at A. Measurements use source samples, not screen pixels.</p>
+        <div class="teaching-hint teaching-only" id="teachingHint">
+          <span class="step-number">2</span>
+          <p><strong>Find the reference.</strong> Start with <button type="button" class="inline-action" id="quickBaselineMedian">Use visible median</button>, then tap the trace twice to place A and B.</p>
+        </div>
       </div>
 
       <div class="measurement-layout">
-        <section class="panel">
+        <section class="panel advanced-baseline-panel">
           <div class="panel-head">
             <div>
               <p class="section-kicker">BASELINE</p>
@@ -120,6 +157,10 @@
             </div>
             <button id="resetCalipers">Reset</button>
           </div>
+          <div class="teaching-only quick-measure-head">
+            <span class="step-number">3</span>
+            <p><strong>Measure it.</strong> A and B are anchored to source samples. Compare the time interval and the amplitude relative to your baseline.</p>
+          </div>
           <div id="measurementGrid" class="measurement-grid">
             <div><span>A</span><strong>—</strong></div>
             <div><span>B</span><strong>—</strong></div>
@@ -127,6 +168,23 @@
             <div><span>Signal</span><strong>—</strong></div>
           </div>
         </section>
+      </div>
+    </section>
+
+    <section class="teaching-quiz teaching-only" id="teachingQuiz" aria-labelledby="quiz-heading">
+      <div class="quiz-head">
+        <div>
+          <p class="section-kicker">STEP 4 · CHECK YOUR UNDERSTANDING</p>
+          <h2 id="quiz-heading">Quick ECG questions</h2>
+        </div>
+        <div class="quiz-score"><span id="quizScore">0</span>/<span id="quizTotal">0</span></div>
+      </div>
+      <div id="quizQuestion" class="quiz-question"></div>
+      <div id="quizOptions" class="quiz-options"></div>
+      <p id="quizFeedback" class="quiz-feedback" aria-live="polite"></p>
+      <div class="quiz-actions">
+        <button type="button" id="quizNext">Next question</button>
+        <button type="button" id="quizReset">Restart</button>
       </div>
     </section>
 
