@@ -65,3 +65,105 @@ footer{border-top:1px solid #d8e1e8;padding:24px 0 34px;display:flex;justify-con
   .keep-actions{justify-content:flex-start}
   canvas{height:360px}
 }
+
+
+/* Responsive dual-surface architecture */
+.teaching-only{display:none}
+.mode-switch{display:flex;gap:4px;padding:4px;border-radius:12px;background:rgba(255,255,255,.08)}
+.mode-button{min-height:40px;border-color:rgba(255,255,255,.22);background:transparent;color:#dceaf2}
+.mode-button[aria-pressed="true"]{background:#fff;color:#173b57}
+body.mode-teaching .advanced-only{display:none!important}
+body.mode-teaching .teaching-only{display:block}
+body.mode-teaching .quick-toolbar{display:flex}
+body.mode-teaching .lesson-progress{display:flex}
+body.mode-teaching .segmented{display:grid}
+body.mode-teaching .quick-measure-head{display:flex}
+body.mode-teaching .teaching-hint{display:flex}
+body.mode-teaching .quiz-head{display:flex}
+body.mode-teaching .quiz-actions{display:flex}
+body.mode-teaching .advanced-baseline-panel{display:none}
+body.mode-teaching .measurement-layout{grid-template-columns:1fr}
+body.mode-teaching .workspace{padding-top:10px}
+body.mode-teaching .provenance{margin-top:12px}
+body.mode-teaching .plot-card{border-radius:16px;border-top:1px solid #dde6ed}
+body.mode-teaching .controls+.plot-card{border-top:1px solid #dde6ed}
+
+.mobile-intro,.quick-toolbar,.teaching-quiz{background:#fff;border:1px solid #dde6ed;border-radius:16px;margin:14px 0;padding:16px}
+.mobile-intro{justify-content:space-between;align-items:center;gap:16px}
+.mobile-intro h2,.teaching-quiz h2{margin:0;font-size:1.2rem}
+.mobile-intro p{margin:.35rem 0 0;color:#5d6d79}
+.lesson-progress{gap:8px;align-items:center}
+.lesson-dot,.step-number{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:800;flex:0 0 auto}
+.lesson-dot{background:#edf2f6;color:#688093}
+.lesson-dot.active,.lesson-dot.done{background:#173b57;color:#fff}
+.quick-toolbar{align-items:center;justify-content:space-between;gap:14px}
+.quick-step{display:flex;align-items:center;gap:10px;min-width:0}
+.quick-step>div{display:flex;flex-direction:column}
+.quick-step span:not(.step-number){color:#657783;font-size:.8rem}
+.step-number{background:#e5eef4;color:#173b57}
+.segmented{grid-template-columns:repeat(3,minmax(82px,1fr));gap:4px;padding:4px;background:#edf2f6;border-radius:12px}
+.segmented button{border:0;background:transparent;min-height:44px}
+.segmented button.active{background:#173b57;color:#fff}
+.teaching-hint{align-items:center;gap:10px;margin-top:10px;padding:12px;background:#eef4f8;border-radius:12px}
+.teaching-hint p,.quick-measure-head p{margin:0;color:#526673}
+.inline-action{padding:4px 7px;border-radius:7px;min-height:auto}
+.quick-measure-head{align-items:center;gap:10px;margin-bottom:10px}
+.quiz-head{justify-content:space-between;align-items:start;gap:12px}
+.quiz-score{font-weight:900;font-size:1.1rem;background:#edf2f6;padding:8px 11px;border-radius:12px}
+.quiz-question{font-size:1.02rem;font-weight:800;margin:16px 0 12px}
+.quiz-options{display:grid;gap:8px}
+.quiz-option{width:100%;text-align:left;min-height:48px;padding:11px 13px}
+.quiz-option.correct{border-color:#4f8067;background:#edf7f1}
+.quiz-option.incorrect{border-color:#a95b4c;background:#fff1ee}
+.quiz-option:disabled{opacity:1}
+.quiz-feedback{min-height:2.6em;color:#526673;margin:10px 0}
+.quiz-actions{justify-content:space-between;gap:8px}
+.teaching-quiz{margin-top:0}
+
+@media(max-width:800px){
+  button,.file-button,select,input[type="number"]{min-height:44px}
+  .topbar{padding:18px max(14px,calc((100vw - 1180px)/2))}
+  .topbar h1{font-size:2rem}
+  .subtitle{font-size:.9rem}
+  .top-actions{width:100%;justify-content:space-between;flex-wrap:wrap}
+  .mode-switch{flex:1}
+  .mode-switch .mode-button{flex:1}
+  main,footer{width:min(100% - 20px,1180px)}
+  .provenance{padding:14px;gap:12px}
+  .provenance-grid{grid-template-columns:1fr 1fr;gap:7px}
+  .provenance-item{padding:8px 9px}
+  .provenance-item span{font-size:.62rem}
+  .provenance-item strong,.provenance-item a{font-size:.78rem}
+  .quick-toolbar{flex-direction:column;align-items:stretch}
+  .segmented{width:100%}
+  .plot-card{padding:8px}
+  .legend{gap:8px;font-size:.68rem;overflow-x:auto;white-space:nowrap;padding-bottom:2px}
+  canvas{height:300px;border-radius:8px}
+  .measurement-layout{gap:9px;margin-top:9px}
+  .panel{padding:13px}
+  .measurement-grid{gap:7px}
+  .measurement-grid div{padding:10px}
+  .measurement-grid strong{font-size:.82rem;overflow-wrap:anywhere}
+  .keep-section,.method-note{padding:15px}
+  .keep-actions{display:grid;grid-template-columns:1fr}
+  .keep-actions button,.keep-actions .file-button{text-align:center;width:100%}
+  .mobile-intro{align-items:flex-start;flex-direction:column}
+  .lesson-progress{width:100%;justify-content:space-between}
+  .lesson-progress:before{content:"";position:absolute}
+  .quiz-actions{flex-direction:column}
+  .quiz-actions button{width:100%}
+  footer{flex-direction:column;gap:5px}
+}
+
+@media(max-width:460px){
+  .provenance-grid{grid-template-columns:1fr}
+  canvas{height:270px}
+  .legend span:nth-child(1),.legend span:nth-child(2),.legend span:nth-child(3){display:none}
+  .measurement-grid{grid-template-columns:1fr}
+  .topbar .eyebrow{margin-top:8px}
+}
+
+@media(max-width:900px) and (orientation:landscape){
+  body.mode-teaching canvas{height:330px}
+  body.mode-teaching .topbar{padding-top:12px;padding-bottom:12px}
+}
