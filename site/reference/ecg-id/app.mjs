@@ -14,7 +14,6 @@ import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs"
 const BUNDLED_RECORD_URL = "./data/Person_01_rec_1.json";
 const RECORD_ID = "ECG-ID/Person_01/rec_1";
 const SESSION_KEY = "opl:ecg-reference:session:" + RECORD_ID;
-const CLASSROOM_ROLE = new URLSearchParams(location.search).get("classroom");
 const MODE_KEY = "opl:ecg-reference:mode";
 const QUIZ_KEY = "opl:ecg-reference:quiz";
 
@@ -46,7 +45,6 @@ const el = Object.fromEntries([
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
-let classroomEmitTimer = null;
 
 boot();
 
@@ -107,32 +105,27 @@ function bindEvents() {
     state.mode = el.waveformMode.value;
     syncQuickWaveformButtons();
     draw();
-    scheduleClassroomViewEmit();
   });
   el.measurementSignal.addEventListener("change", () => { state.measurementSignal = el.measurementSignal.value; renderMeasurements(); draw(); scheduleClassroomViewEmit(); });
   el.verticalGrid.addEventListener("change", () => {
     state.verticalGridAdc = Number(el.verticalGrid.value);
     el.gridScale.textContent = "Small box: 40 ms × " + state.verticalGridAdc + " ΔADC";
     draw();
-    scheduleClassroomViewEmit();
   });
   el.windowLength.addEventListener("change", () => {
     state.windowSeconds = Number(el.windowLength.value);
     clampWindowStart();
     syncWindowControls();
     draw();
-    scheduleClassroomViewEmit();
   });
   el.windowStart.addEventListener("input", () => {
     state.windowStartSeconds = Number(el.windowStart.value);
     syncWindowControls();
     draw();
-    scheduleClassroomViewEmit();
   });
   el.showAnnotations.addEventListener("change", () => {
     state.showAnnotations = el.showAnnotations.checked;
     draw();
-    scheduleClassroomViewEmit();
   });
   el.baselineInput.addEventListener("change", () => setBaseline(Number(el.baselineInput.value)));
   el.baselineZero.addEventListener("click", () => setBaseline(Number(state.record?.adc?.zero?.[signalIndex()] ?? 0)));
@@ -151,7 +144,6 @@ function bindEvents() {
     persistSession();
     renderMeasurements();
     draw();
-    scheduleClassroomViewEmit();
   });
 
   el.ecgCanvas.addEventListener("click", event => {
@@ -167,7 +159,6 @@ function bindEvents() {
     persistSession();
     renderMeasurements();
     draw();
-    scheduleClassroomViewEmit();
   });
 
   el.saveOffline.addEventListener("click", async () => {
@@ -348,7 +339,6 @@ function loadRecord(record, session) {
   renderMeasurements();
   syncQuickWaveformButtons();
   draw();
-  scheduleClassroomViewEmit();
 }
 
 function renderProvenance() {
@@ -414,7 +404,6 @@ function setBaseline(value) {
   persistSession();
   renderMeasurements();
   draw();
-  scheduleClassroomViewEmit();
 }
 
 function activeSignal() {
@@ -593,26 +582,3 @@ function integerOrNull(value){return Number.isInteger(value)?value:null}
 function roundNumber(value,places=0){const p=10**places;return Math.round(Number(value)*p)/p}
 function formatSigned(value){const v=roundNumber(value,2);return (v>0?"+":"")+String(v)}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]))}
-
-
-function scheduleClassroomViewEmit() {
-  if (CLASSROOM_ROLE !== "teacher" || window.parent === window || !state.record) return;
-  clearTimeout(classroomEmitTimer);
-  classroomEmitTimer = setTimeout(() => {
-    window.parent.postMessage({
-      type: "opl-reference-view",
-      source: "ecg-reference",
-      view: {
-        record_id: state.record.record_id,
-        window_start_seconds: state.windowStartSeconds,
-        window_seconds: state.windowSeconds,
-        waveform_mode: state.mode,
-        measurement_signal: state.measurementSignal,
-        baseline_adc: state.baseline,
-        calipers: state.calipers,
-        vertical_grid_adc: state.verticalGridAdc,
-        show_annotations: state.showAnnotations
-      }
-    }, location.origin);
-  }, 120);
-}
