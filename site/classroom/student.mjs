@@ -199,6 +199,7 @@ function renderLiveQuestion(){
 function drawMiniTrace(){
   if(!record||!state?.section)return;
   const section=state.section;
+  const referenceView=state.reference_view||null;
   const canvas=el.miniTrace;
   const rect=canvas.getBoundingClientRect();
   const dpr=Math.max(1,window.devicePixelRatio||1);
@@ -209,20 +210,36 @@ function drawMiniTrace(){
   ctx.fillStyle="#fbfcfd";ctx.fillRect(0,0,w,h);
 
   const fs=record.sampling_rate_hz;
-  const start=Math.max(0,Math.floor((section.window_start_s||0)*fs));
-  const len=Math.floor((section.window_length_s||5)*fs);
+  const startSeconds=referenceView?.window_start_seconds ?? section.window_start_s ?? 0;
+  const windowSeconds=referenceView?.window_seconds ?? section.window_length_s ?? 5;
+  const start=Math.max(0,Math.floor(startSeconds*fs));
+  const len=Math.floor(windowSeconds*fs);
   const end=Math.min(record.signals.raw.length,start+len);
   const raw=record.signals.raw.slice(start,end);
   const filtered=record.signals.filtered.slice(start,end);
-  const mode=section.waveform||"filtered";
+  const mode=referenceView?.waveform_mode ?? section.waveform ?? "filtered";
   const combined=mode==="overlay"?raw.concat(filtered):mode==="raw"?raw:filtered;
   const min=Math.min(...combined),max=Math.max(...combined);
   const span=Math.max(1,max-min);
   const yMin=min-span*.12,yMax=max+span*.12;
 
-  drawGrid(w,h,section.window_start_s||0,(section.window_start_s||0)+(section.window_length_s||5),dpr);
+  drawGrid(w,h,startSeconds,startSeconds+windowSeconds,dpr);
   if(mode==="raw"||mode==="overlay")drawSignal(record.signals.raw,start,end,yMin,yMax,w,h,"#18384d",1.4*dpr);
   if(mode==="filtered"||mode==="overlay")drawSignal(record.signals.filtered,start,end,yMin,yMax,w,h,"#b65e2e",1.2*dpr);
+
+  if(referenceView){
+    if(Number.isFinite(Number(referenceView.baseline_adc))){
+      const y=h-(Number(referenceView.baseline_adc)-yMin)/(yMax-yMin)*h;
+      ctx.strokeStyle="#5b6570";ctx.setLineDash([8*dpr,6*dpr]);ctx.lineWidth=1*dpr;
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();ctx.setLineDash([]);
+    }
+    for(const [label,sample] of Object.entries(referenceView.calipers||{})){
+      if(!Number.isInteger(sample)||sample<start||sample>=end) continue;
+      const x=(sample-start)/(end-start-1)*w;
+      ctx.strokeStyle=label==="a"?"#2e7d4d":"#7a3d8a";ctx.lineWidth=1.4*dpr;
+      ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();
+    }
+  }
 }
 
 function drawGrid(w,h,startTime,endTime,dpr){
