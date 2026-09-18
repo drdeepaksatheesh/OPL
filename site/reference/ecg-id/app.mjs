@@ -9,10 +9,13 @@ import {
   downloadJson
 } from "../../reference-lab-core.mjs";
 import {saveRecord, getRecord} from "../../offline-store.mjs";
+import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
 
 const BUNDLED_RECORD_URL = "./data/Person_01_rec_1.json";
 const RECORD_ID = "ECG-ID/Person_01/rec_1";
 const SESSION_KEY = "opl:ecg-reference:session:" + RECORD_ID;
+const MODE_KEY = "opl:ecg-reference:mode";
+const QUIZ_KEY = "opl:ecg-reference:quiz";
 
 const state = {
   record: null,
@@ -26,14 +29,19 @@ const state = {
   windowSeconds: 5,
   windowStartSeconds: 0,
   showAnnotations: true,
-  verticalGridAdc: 50
+  verticalGridAdc: 50,
+  interfaceMode: "advanced",
+  quizIndex: 0,
+  quizResponses: {}
 };
 
 const el = Object.fromEntries([
   "onlineState","provenanceGrid","waveformMode","measurementSignal","verticalGrid","gridScale","windowLength",
   "windowStart","windowStartLabel","showAnnotations","ecgCanvas","baselineOutput",
   "baselineInput","baselineZero","baselineMedian","baselineFromA","resetCalipers",
-  "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus"
+  "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
+  "quickMode","advancedMode","quickBaselineMedian","teachingHint",
+  "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -41,7 +49,10 @@ const ctx = el.ecgCanvas.getContext("2d");
 boot();
 
 async function boot() {
+  initInterfaceMode();
+  restoreQuiz();
   bindEvents();
+  renderQuiz();
   resizeCanvas();
   window.addEventListener("resize", () => { resizeCanvas(); draw(); });
 
@@ -76,7 +87,25 @@ async function boot() {
 }
 
 function bindEvents() {
-  el.waveformMode.addEventListener("change", () => { state.mode = el.waveformMode.value; draw(); });
+  el.quickMode.addEventListener("click", () => setInterfaceMode("teaching"));
+  el.advancedMode.addEventListener("click", () => setInterfaceMode("advanced"));
+
+  document.querySelectorAll("[data-quick-waveform]").forEach(button => {
+    button.addEventListener("click", () => {
+      const mode = button.dataset.quickWaveform;
+      state.mode = mode;
+      el.waveformMode.value = mode;
+      syncQuickWaveformButtons();
+      markLessonComplete(1);
+      draw();
+    });
+  });
+
+  el.waveformMode.addEventListener("change", () => {
+    state.mode = el.waveformMode.value;
+    syncQuickWaveformButtons();
+    draw();
+  });
   el.measurementSignal.addEventListener("change", () => { state.measurementSignal = el.measurementSignal.value; renderMeasurements(); draw(); });
   el.verticalGrid.addEventListener("change", () => {
     state.verticalGridAdc = Number(el.verticalGrid.value);
@@ -100,10 +129,10 @@ function bindEvents() {
   });
   el.baselineInput.addEventListener("change", () => setBaseline(Number(el.baselineInput.value)));
   el.baselineZero.addEventListener("click", () => setBaseline(Number(state.record?.adc?.zero?.[signalIndex()] ?? 0)));
-  el.baselineMedian.addEventListener("click", () => {
-    if (!state.record) return;
-    const [start,end] = visibleSampleRange();
-    setBaseline(median(activeSignal().slice(start, end)));
+  el.baselineMedian.addEventListener("click", useVisibleMedianBaseline);
+  el.quickBaselineMedian.addEventListener("click", () => {
+    useVisibleMedianBaseline();
+    markLessonComplete(2);
   });
   el.baselineFromA.addEventListener("click", () => {
     if (!state.record || state.calipers.a == null) return;
@@ -126,6 +155,7 @@ function bindEvents() {
     const sample = Math.min(end - 1, Math.max(start, Math.round(start + fraction * (end - start - 1))));
     state.calipers[state.nextCaliper] = sample;
     state.nextCaliper = state.nextCaliper === "a" ? "b" : "a";
+    if (state.calipers.a != null && state.calipers.b != null) markLessonComplete(3);
     persistSession();
     renderMeasurements();
     draw();
@@ -166,8 +196,126 @@ function bindEvents() {
     }
   });
 
+  el.quizNext.addEventListener("click", () => {
+    state.quizIndex = (state.quizIndex + 1) % ECG_TEACHING_QUESTIONS.length;
+    persistQuiz();
+    renderQuiz();
+  });
+
+  el.quizReset.addEventListener("click", () => {
+    state.quizIndex = 0;
+    state.quizResponses = {};
+    persistQuiz();
+    renderQuiz();
+  });
+
   window.addEventListener("online", () => { el.onlineState.textContent = "Online"; });
   window.addEventListener("offline", () => { el.onlineState.textContent = "Offline"; });
+}
+
+function initInterfaceMode() {
+  let saved = null;
+  try { saved = localStorage.getItem(MODE_KEY); } catch {}
+  const defaultMode = window.matchMedia("(max-width: 800px)").matches ? "teaching" : "advanced";
+  setInterfaceMode(saved === "teaching" || saved === "advanced" ? saved : defaultMode, false);
+}
+
+function setInterfaceMode(mode, persist = true) {
+  state.interfaceMode = mode === "teaching" ? "teaching" : "advanced";
+  document.body.classList.toggle("mode-teaching", state.interfaceMode === "teaching");
+  document.body.classList.toggle("mode-advanced", state.interfaceMode === "advanced");
+  el.quickMode.setAttribute("aria-pressed", String(state.interfaceMode === "teaching"));
+  el.advancedMode.setAttribute("aria-pressed", String(state.interfaceMode === "advanced"));
+  if (persist) {
+    try { localStorage.setItem(MODE_KEY, state.interfaceMode); } catch {}
+  }
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    draw();
+  });
+}
+
+function syncQuickWaveformButtons() {
+  document.querySelectorAll("[data-quick-waveform]").forEach(button => {
+    button.classList.toggle("active", button.dataset.quickWaveform === state.mode);
+  });
+}
+
+function useVisibleMedianBaseline() {
+  if (!state.record) return;
+  const [start,end] = visibleSampleRange();
+  setBaseline(median(activeSignal().slice(start, end)));
+}
+
+function markLessonComplete(step) {
+  const dots = [...document.querySelectorAll("[data-lesson-dot]")];
+  dots.forEach(dot => {
+    const n = Number(dot.dataset.lessonDot);
+    dot.classList.toggle("done", n <= step);
+    dot.classList.toggle("active", n === Math.min(step + 1, 4));
+  });
+}
+
+function restoreQuiz() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(QUIZ_KEY));
+    if (saved && typeof saved === "object") {
+      state.quizIndex = Number.isInteger(saved.index) ? Math.max(0, Math.min(saved.index, ECG_TEACHING_QUESTIONS.length - 1)) : 0;
+      state.quizResponses = saved.responses && typeof saved.responses === "object" ? saved.responses : {};
+    }
+  } catch {}
+}
+
+function persistQuiz() {
+  try {
+    localStorage.setItem(QUIZ_KEY, JSON.stringify({
+      index: state.quizIndex,
+      responses: state.quizResponses
+    }));
+  } catch {}
+}
+
+function renderQuiz() {
+  const question = ECG_TEACHING_QUESTIONS[state.quizIndex];
+  if (!question) return;
+
+  const score = scoreQuiz(state.quizResponses);
+  el.quizScore.textContent = String(score.correct);
+  el.quizTotal.textContent = String(score.total);
+  el.quizQuestion.textContent = question.prompt;
+  el.quizOptions.innerHTML = "";
+
+  const existing = state.quizResponses[question.id];
+  question.options.forEach((option, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quiz-option";
+    button.textContent = option;
+
+    if (Number.isInteger(existing)) {
+      button.disabled = true;
+      if (index === question.answer) button.classList.add("correct");
+      else if (index === existing) button.classList.add("incorrect");
+    } else {
+      button.addEventListener("click", () => answerQuiz(question, index));
+    }
+    el.quizOptions.appendChild(button);
+  });
+
+  if (Number.isInteger(existing)) {
+    const result = evaluateAnswer(question, existing);
+    el.quizFeedback.textContent = (result.correct ? "Correct. " : "Not quite. ") + result.explanation;
+  } else {
+    el.quizFeedback.textContent = "Choose one answer.";
+  }
+  el.quizNext.textContent = state.quizIndex === ECG_TEACHING_QUESTIONS.length - 1 ? "Back to first" : "Next question";
+}
+
+function answerQuiz(question, optionIndex) {
+  state.quizResponses[question.id] = optionIndex;
+  persistQuiz();
+  markLessonComplete(4);
+  renderQuiz();
 }
 
 function loadRecord(record, session) {
@@ -179,7 +327,7 @@ function loadRecord(record, session) {
     b: integerOrNull(session?.calipers?.b)
   };
   state.nextCaliper = state.calipers.a == null ? "a" : state.calipers.b == null ? "b" : "a";
-  state.windowSeconds = Math.min(5, record.duration_seconds);
+  state.windowSeconds = Math.min(state.interfaceMode === "teaching" ? 5 : 5, record.duration_seconds);
   state.windowStartSeconds = 0;
 
   el.windowLength.value = String(state.windowSeconds);
@@ -188,6 +336,7 @@ function loadRecord(record, session) {
   syncWindowControls();
   renderProvenance();
   renderMeasurements();
+  syncQuickWaveformButtons();
   draw();
 }
 
