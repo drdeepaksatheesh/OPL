@@ -64,7 +64,7 @@ try {
     assert.match(uncertainMeasurement, /ms/);
 
     const rrText = await page.locator("#rrBridgeStats").innerText();
-    assert.match(rrText, /R–R intervals/);
+    assert.match(rrText, /R–R intervals/i);
 
     const firstQuizOption = page.locator(".quiz-option").first();
     await firstQuizOption.tap();
