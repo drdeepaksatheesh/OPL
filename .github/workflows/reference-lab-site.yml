@@ -56,7 +56,7 @@ jobs:
         run: python scripts/verify_ecgid_reference.py
 
       - name: Run Reference Lab calculation, validation and teaching tests
-        run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/teaching.test.mjs
+        run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/ideal-ecg.test.mjs site/tests/teaching.test.mjs
 
       - name: Build offline-capable static site
         run: python scripts/build_reference_site.py
