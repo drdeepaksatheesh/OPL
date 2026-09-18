@@ -10,6 +10,7 @@ const SHELL = [
   BASE + "analytics.js",
   BASE + "pwa.js",
   BASE + "reference-lab-core.mjs",
+  BASE + "reference-validation.mjs",
   BASE + "offline-store.mjs",
   BASE + "reference/ecg-id/index.html",
   BASE + "reference/ecg-id/styles.css",
