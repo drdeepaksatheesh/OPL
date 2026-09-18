@@ -45,6 +45,10 @@ try {
     assert.match(measurementText, /Δt/);
     assert.doesNotMatch(measurementText, /Δt\s*—/);
 
+    const validationText = await page.locator(".validation-section").innerText();
+    assert.match(validationText, /8\/8/);
+    assert.match(validationText, /Sampling rate/);
+
     const firstQuizOption = page.locator(".quiz-option").first();
     await firstQuizOption.tap();
     const feedback = await page.locator("#quizFeedback").innerText();
@@ -69,6 +73,10 @@ try {
 
     const canvas = await page.locator("#ecgCanvas").boundingBox();
     assert.ok(canvas && canvas.width > 900);
+
+    const validationText = await page.locator(".validation-section").innerText();
+    assert.match(validationText, /8\/8/);
+    assert.equal(await page.locator("#downloadValidation").isVisible(), true);
 
     await page.screenshot({path: out + "/desktop-advanced.png", fullPage: true});
     await page.close();
