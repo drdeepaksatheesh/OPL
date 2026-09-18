@@ -282,9 +282,9 @@ jobs:
               throw 'Could not parse classroom teacher URL / join code.'
             }
 
-            $teacherUri = [uri]$teacherUrl
-            $query = [System.Web.HttpUtility]::ParseQueryString($teacherUri.Query)
-            $teacherToken = $query['teacher']
+            $tokenMatch = [regex]::Match($teacherUrl, '[?&]teacher=([^&]+)')
+            if (-not $tokenMatch.Success) { throw 'Teacher token missing from dashboard URL.' }
+            $teacherToken = [System.Uri]::UnescapeDataString($tokenMatch.Groups[1].Value)
             $base = 'http://127.0.0.1:8780'
             $teacherHeaders = @{'X-OPL-Teacher-Token'=$teacherToken}
 
