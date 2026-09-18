@@ -20,7 +20,11 @@ def main():
     assert len(data["signals"]["raw"]) == 10000
     assert len(data["signals"]["filtered"]) == 10000
     assert data["signals"]["raw"] != data["signals"]["filtered"]
-    assert len(data["annotations"]) == 10
+    assert data["annotation_summary"]["annotated_beats"] == 10
+    assert data["annotation_summary"]["annotation_events"] == len(data["annotations"])
+    assert len(data["annotations"]) >= 10
+    symbols = [item.get("symbol") for item in data["annotations"]]
+    assert "T" in symbols
     assert data["provenance"]["doi"] == "10.13026/C2J01F"
     assert data["provenance"]["license"] == "Open Data Commons Attribution License v1.0"
 
