@@ -53,8 +53,8 @@ jobs:
       - name: Verify source-derived reference package
         run: python scripts/verify_ecgid_reference.py
 
-      - name: Run Reference Lab calculation tests
-        run: node --test site/tests/reference-lab-core.test.mjs
+      - name: Run Reference Lab calculation and teaching tests
+        run: node --test site/tests/reference-lab-core.test.mjs site/tests/teaching.test.mjs
 
       - name: Build offline-capable static site
         run: python scripts/build_reference_site.py
@@ -140,3 +140,53 @@ jobs:
               Stop-Process -Id $server.Id -Force
             }
           }
+
+
+  responsive-browser-smoke:
+    runs-on: ubuntu-latest
+    needs: build-reference-lab
+    timeout-minutes: 10
+    steps:
+      - name: Download the exact built Reference Lab artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: opl-reference-lab-static
+          path: artifact
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright test runtime
+        run: |
+          npm init -y
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start static server
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory artifact/opl-site > /tmp/opl-http.log 2>&1 &
+          echo $! > /tmp/opl-http.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8765/reference/ecg-id/index.html >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/opl-http.log
+          exit 1
+
+      - name: Test phone Teaching mode and desktop Advanced mode
+        env:
+          OPL_TEST_URL: http://127.0.0.1:8765
+          OPL_SCREENSHOT_DIR: build/browser-smoke
+        run: node artifact/opl-site/tests/browser-smoke.mjs
+
+      - name: Upload responsive screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-responsive-smoke-screenshots
+          path: build/browser-smoke
+          if-no-files-found: error
+          retention-days: 30
