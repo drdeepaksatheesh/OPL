@@ -7,7 +7,8 @@
       "name": "ECG Reference Lab",
       "area": "Reference physiology",
       "status": "development",
-      "summary": "Trusted open ECG data made inspectable: raw versus filtered signal, baseline-relative morphology, time/amplitude calipers, annotations and reproducible provenance."
+      "summary": "Trusted open ECG data made inspectable: raw versus filtered signal, baseline-relative morphology, time/amplitude calipers, annotations and reproducible provenance.",
+      "href": "reference/ecg-id/index.html"
     },
     {
       "id": "visual-hrv",
