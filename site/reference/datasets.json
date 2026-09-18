@@ -1,0 +1,40 @@
+{
+  "schema": "org.openphysiologylab.reference-dataset-registry/v1",
+  "datasets": [
+    {
+      "id": "physionet-ecg-id-v1.0.0",
+      "title": "ECG-ID Database",
+      "repository": "PhysioNet",
+      "version": "1.0.0",
+      "doi": "10.13026/C2J01F",
+      "license": "Open Data Commons Attribution License v1.0",
+      "contributor": "Tatiana Lugovaya",
+      "modality": "ECG",
+      "current_opl_record": "Person_01/rec_1",
+      "acquisition": {
+        "lead": "I",
+        "sampling_rate_hz": 500,
+        "adc_resolution_bits": 12,
+        "duration_seconds": 20
+      },
+      "source_signals": [
+        "raw ECG channel",
+        "source-provided filtered ECG channel"
+      ],
+      "opl_roles": [
+        "raw-versus-source-filtered teaching",
+        "sampling/time-grid teaching",
+        "baseline-relative digital amplitude teaching",
+        "browser Reference Lab integration",
+        "classroom synchronization prototype"
+      ],
+      "annotation_status": "Automated R/T peak annotations supplied by the source; unaudited.",
+      "not_claimed": [
+        "cardiologist gold-standard waveform delineation",
+        "diagnostic validation",
+        "NPG Lite hardware voltage calibration"
+      ],
+      "provenance_manifest": "reference/ecg-id/manifest.json"
+    }
+  ]
+}
