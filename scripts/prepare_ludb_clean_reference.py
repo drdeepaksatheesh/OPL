@@ -76,14 +76,41 @@ def interior_segment(a: int, b: int) -> tuple[int, int] | None:
 
 
 def annotation_events(ann) -> list[dict]:
-    return [
+    events = [
         {
             "sample": int(sample),
             "symbol": str(symbol),
             "num": int(num),
+            "wave": None,
         }
         for sample, symbol, num in zip(ann.sample, ann.symbol, ann.num)
     ]
+
+    # LUDB lead annotation files use the standard WFDB symbols
+    #   ( peak )
+    # for each manually delineated P wave, QRS complex and T wave,
+    # but the waveform class is not populated in the num field.
+    # Infer the boundary class from the peak enclosed by each pair.
+    peak_to_wave = {"p": "P", "N": "QRS", "t": "T"}
+    for idx, event in enumerate(events):
+        if event["symbol"] == "(":
+            for nxt in events[idx + 1 :]:
+                if nxt["symbol"] == ")":
+                    break
+                if nxt["symbol"] in peak_to_wave:
+                    event["wave"] = peak_to_wave[nxt["symbol"]]
+                    break
+        elif event["symbol"] == ")":
+            for prev in reversed(events[:idx]):
+                if prev["symbol"] == "(":
+                    break
+                if prev["symbol"] in peak_to_wave:
+                    event["wave"] = peak_to_wave[prev["symbol"]]
+                    break
+        elif event["symbol"] in peak_to_wave:
+            event["wave"] = peak_to_wave[event["symbol"]]
+
+    return events
 
 
 def isoelectric_samples(events: list[dict], signal: np.ndarray) -> tuple[np.ndarray, list[dict]]:
@@ -93,11 +120,11 @@ def isoelectric_samples(events: list[dict], signal: np.ndarray) -> tuple[np.ndar
 
     for idx, event in enumerate(events):
         # P-wave end -> next QRS onset (PR segment)
-        if event["symbol"] == ")" and event["num"] == 0:
+        if event["symbol"] == ")" and event["wave"] == "P":
             for nxt in events[idx + 1 :]:
                 if nxt["sample"] - event["sample"] > 250:
                     break
-                if nxt["symbol"] == "(" and nxt["num"] == 1:
+                if nxt["symbol"] == "(" and nxt["wave"] == "QRS":
                     bounds = interior_segment(event["sample"], nxt["sample"])
                     if bounds:
                         a, b = bounds
@@ -115,11 +142,11 @@ def isoelectric_samples(events: list[dict], signal: np.ndarray) -> tuple[np.ndar
                     break
 
         # T-wave end -> next P-wave onset (TP segment)
-        if event["symbol"] == ")" and event["num"] == 2:
+        if event["symbol"] == ")" and event["wave"] == "T":
             for nxt in events[idx + 1 :]:
                 if nxt["sample"] - event["sample"] > 700:
                     break
-                if nxt["symbol"] == "(" and nxt["num"] == 0:
+                if nxt["symbol"] == "(" and nxt["wave"] == "P":
                     bounds = interior_segment(event["sample"], nxt["sample"])
                     if bounds:
                         a, b = bounds
@@ -297,6 +324,7 @@ def main() -> None:
             "sample": event["sample"],
             "symbol": event["symbol"],
             "num": event["num"],
+            "wave": event["wave"],
             "source": "LUDB cardiologist manual delineation",
         }
         for event in events
