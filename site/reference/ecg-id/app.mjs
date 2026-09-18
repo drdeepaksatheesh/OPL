@@ -427,42 +427,64 @@ function syncQuickWaveformButtons() {
 function renderProvenance() {
   const p = state.record?.provenance || {};
   const m = state.sourceMode === "real" ? (state.sourceManifest || {}) : {};
-  const acquisition = state.sourceMode === "ideal"
-    ? "Synthetic floating-point model"
-    : (state.record?.adc?.resolution_bits ? state.record.adc.resolution_bits + "-bit" : "—");
 
-  const values = state.sourceMode === "ideal" ? [
-    ["Source type", "Synthetic teaching model"],
-    ["Generator", p.dataset || "OPL idealized teaching template"],
-    ["Version", p.dataset_version || "v1"],
-    ["Sampling", state.record.sampling_rate_hz + " Hz"],
-    ["Baseline", "0 mV by construction"],
-    ["Grid", "40 ms × 0.1 mV"],
-    ["Validation role", "Teaching only — not ground truth"],
-    ["Processing", p.known_preprocessing || "None"],
-    ["License", p.license || "GPL-3.0 project code"],
-    ["OPL build", buildLabel()]
-  ] : [
-    ["Dataset", p.dataset || m.title || "ECG-ID Database"],
-    ["Repository", p.repository || m.repository || "PhysioNet"],
-    ["Contributor", p.contributor || m.contributor || "Tatiana Lugovaya"],
-    ["Version", p.dataset_version || m.version || "1.0.0"],
-    ["DOI", p.doi || m.doi || "10.13026/C2J01F"],
-    ["License", p.license || m.license || "ODC Attribution 1.0"],
-    ["Record", state.record.record_id],
-    ["Sampling", state.record.sampling_rate_hz + " Hz"],
-    ["Acquisition", acquisition],
-    ["OPL processing", "None unless explicitly selected"],
-    ["OPL build", buildLabel()]
-  ];
+  let values;
+  let summary;
 
-  el.provenanceSummary.textContent = state.sourceMode === "ideal"
-    ? "OPL idealized teaching template · synthetic · 500 Hz"
-    : (p.dataset || "ECG-ID") + " · " + (p.repository || "PhysioNet") + " · " + state.record.sampling_rate_hz + " Hz · " + acquisition;
+  if (state.sourceMode === "ideal") {
+    values = [
+      ["Source type", "Synthetic teaching model"],
+      ["Generator", p.dataset || "OPL idealized teaching template"],
+      ["Version", p.dataset_version || "v1"],
+      ["Sampling", state.record.sampling_rate_hz + " Hz"],
+      ["Baseline", "0 mV by construction"],
+      ["Grid", "40 ms × 0.1 mV"],
+      ["Validation role", "Teaching only — not ground truth"],
+      ["Processing", p.known_preprocessing || "None"],
+      ["License", p.license || "GPL-3.0 project code"],
+      ["OPL build", buildLabel()]
+    ];
+    summary = "OPL idealized teaching template · synthetic · 500 Hz";
+  } else if (state.sourceMode === "clean") {
+    values = [
+      ["Dataset", p.dataset || "Lobachevsky University ECG Database (LUDB)"],
+      ["Repository", p.repository || "PhysioNet"],
+      ["Version", p.dataset_version || "1.0.1"],
+      ["DOI", p.doi || "10.13026/eegm-h675"],
+      ["License", p.license || "ODC Attribution 1.0"],
+      ["Record / lead", (p.record || state.record.record_id) + " · Lead " + (p.lead || "II")],
+      ["Sampling", state.record.sampling_rate_hz + " Hz"],
+      ["Amplitude", "Physical mV from source WFDB metadata"],
+      ["Annotations", "Manual P / QRS / T peaks and boundaries by LUDB cardiologists"],
+      ["Selection", "Metadata eligibility + objective Lead-II baseline/noise ranking"],
+      ["OPL processing", "No filtering applied to displayed waveform"],
+      ["OPL build", buildLabel()]
+    ];
+    summary = "LUDB " + (p.record || "119") + " · real Lead II · 500 Hz · physical mV";
+  } else {
+    const acquisition = state.record?.adc?.resolution_bits ? state.record.adc.resolution_bits + "-bit" : "—";
+    values = [
+      ["Dataset", p.dataset || m.title || "ECG-ID Database"],
+      ["Repository", p.repository || m.repository || "PhysioNet"],
+      ["Contributor", p.contributor || m.contributor || "Tatiana Lugovaya"],
+      ["Version", p.dataset_version || m.version || "1.0.0"],
+      ["DOI", p.doi || m.doi || "10.13026/C2J01F"],
+      ["License", p.license || m.license || "ODC Attribution 1.0"],
+      ["Record", state.record.record_id],
+      ["Sampling", state.record.sampling_rate_hz + " Hz"],
+      ["Acquisition", acquisition],
+      ["OPL processing", "None unless explicitly selected"],
+      ["OPL build", buildLabel()]
+    ];
+    summary = (p.dataset || "ECG-ID") + " · " + (p.repository || "PhysioNet") + " · " +
+      state.record.sampling_rate_hz + " Hz · " + acquisition;
+  }
 
+  el.provenanceSummary.textContent = summary;
   el.provenanceGrid.innerHTML = values.map(([label,value]) => {
     const content = label === "DOI" && value && value !== "—"
-      ? '<a href="https://doi.org/' + escapeHtml(String(value)) + '" target="_blank" rel="noopener">' + escapeHtml(String(value)) + "</a>"
+      ? '<a href="https://doi.org/' + escapeHtml(String(value)) + '" target="_blank" rel="noopener">' +
+        escapeHtml(String(value)) + "</a>"
       : "<strong>" + escapeHtml(String(value ?? "—")) + "</strong>";
     return '<div class="provenance-item"><span>' + escapeHtml(label) + "</span>" + content + "</div>";
   }).join("");
@@ -510,6 +532,9 @@ function renderMeasurements() {
   if (state.sourceMode === "ideal") {
     el.baselineOutput.textContent = "0 mV";
     el.baselineInput.value = "0";
+  } else if (state.sourceMode === "clean") {
+    el.baselineOutput.textContent = formatSigned(roundNumber(state.baseline, 4)) + " mV ref";
+    el.baselineInput.value = String(roundNumber(state.baseline, 4));
   } else if (state.baselineStatus === "uncertain") {
     el.baselineOutput.textContent = "uncertain";
     el.baselineInput.value = String(roundNumber(state.baseline, 3));
@@ -521,13 +546,21 @@ function renderMeasurements() {
 
 function cursorText(sample, value) {
   const time = sampleToMs(sample, state.record.sampling_rate_hz);
+
   if (state.sourceMode === "ideal") {
     const delta = value - IDEAL_ECG_SPEC.baseline_mV;
     return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
   }
+
+  if (state.sourceMode === "clean") {
+    const delta = value - state.baseline;
+    return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
+  }
+
   if (state.baselineStatus === "uncertain") {
     return roundNumber(time, 2) + " ms · amplitude withheld";
   }
+
   const delta = deltaAdc(value, state.baseline);
   return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 2)) + " ΔADC";
 }
@@ -559,9 +592,19 @@ function useVisibleMedianBaseline() {
 
 function renderBaselineReality() {
   if (state.sourceMode === "ideal") {
-    el.baselineRealityText.textContent = "Known by construction: the synthetic isoelectric baseline is exactly 0 mV.";
+    el.baselineRealityText.textContent =
+      "Known by construction: the synthetic isoelectric baseline is exactly 0 mV.";
     el.baselineConfident.classList.remove("active");
     el.baselineUncertain.classList.remove("active");
+    return;
+  }
+
+  if (state.sourceMode === "clean") {
+    el.baselineConfident.classList.remove("active");
+    el.baselineUncertain.classList.remove("active");
+    el.baselineRealityText.textContent =
+      "Real biological reference: OPL estimates the local isoelectric level from the LUDB cardiologist-delineated PR and TP segments. " +
+      "Amplitude is reported in physical mV relative to that reference.";
     return;
   }
 
@@ -573,42 +616,96 @@ function renderBaselineReality() {
     : "Local baseline accepted for this view: vertical values are reported relative to the selected ADC reference, not as calibrated input mV.";
 }
 
+function renderCleanSelection() {
+  if (!el.cleanSelectionSummary || !el.cleanBaselineDetails) return;
+
+  if (state.sourceMode !== "clean" || !state.cleanRecord) {
+    el.cleanSelectionSummary.innerHTML = "";
+    el.cleanBaselineDetails.innerHTML = "";
+    return;
+  }
+
+  const selection = state.cleanRecord.selection || {};
+  const source = selection.metadata || {};
+  const selectionItems = [
+    ["Eligible records", "23"],
+    ["Selected record", selection.record_id || "119"],
+    ["Rhythm", source.rhythm || "Sinus rhythm"],
+    ["Electrical axis", source.electrical_axis || "Normal"],
+    ["Baseline spread", Number.isFinite(Number(selection.baseline_segment_spread_mV))
+      ? roundNumber(selection.baseline_segment_spread_mV, 4) + " mV"
+      : "—"],
+    ["HF noise MAD", Number.isFinite(Number(selection.high_frequency_noise_mad_mV))
+      ? roundNumber(selection.high_frequency_noise_mad_mV, 5) + " mV"
+      : "—"]
+  ];
+
+  el.cleanSelectionSummary.innerHTML = selectionItems.map(([label,value]) =>
+    '<div><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
+  ).join("");
+
+  const iso = state.cleanRecord.isoelectric_segments || [];
+  const pr = iso.filter(segment => segment.type === "PR").length;
+  const tp = iso.filter(segment => segment.type === "TP").length;
+  const baselineItems = [
+    ["Reference baseline", formatSigned(roundNumber(state.baseline, 4)) + " mV"],
+    ["Isoelectric segments", iso.length],
+    ["PR segments", pr],
+    ["TP segments", tp]
+  ];
+
+  el.cleanBaselineDetails.innerHTML = baselineItems.map(([label,value]) =>
+    '<div><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
+  ).join("");
+}
+
 function renderRrBridge() {
   if (!el.rrBridgeStats) return;
-  if (state.sourceMode !== "real" || !state.realRecord) {
+
+  if (state.sourceMode === "ideal" || !state.record) {
     el.rrBridgeStats.innerHTML = "";
     return;
   }
-  const rSamples = (state.realRecord.annotations || [])
-    .filter(a => a.symbol === "N")
-    .map(a => Number(a.sample))
+
+  const rSamples = (state.record.annotations || [])
+    .filter(annotation => annotation.symbol === "N")
+    .map(annotation => Number(annotation.sample))
     .filter(Number.isFinite)
-    .sort((a,b)=>a-b);
+    .sort((a,b) => a-b);
+
   const rr = [];
-  for (let i=1;i<rSamples.length;i++) {
-    rr.push((rSamples[i]-rSamples[i-1]) / state.realRecord.sampling_rate_hz * 1000);
+  for (let i=1; i<rSamples.length; i++) {
+    rr.push((rSamples[i]-rSamples[i-1]) / state.record.sampling_rate_hz * 1000);
   }
+
   const mean = rr.length ? rr.reduce((a,b)=>a+b,0)/rr.length : NaN;
   const approxHr = Number.isFinite(mean) && mean > 0 ? 60000/mean : NaN;
+  const markerLabel = state.sourceMode === "clean"
+    ? "Manual QRS-peak markers"
+    : "Source automated R markers";
 
   const items = [
-    ["Source R markers", rSamples.length],
+    [markerLabel, rSamples.length],
     ["R–R intervals", rr.length],
     ["Mean RR", Number.isFinite(mean) ? roundNumber(mean,1) + " ms" : "—"],
     ["Approx. HR", Number.isFinite(approxHr) ? roundNumber(approxHr,1) + " bpm" : "—"]
   ];
+
   el.rrBridgeStats.innerHTML = items.map(([label,value]) =>
     '<div><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
   ).join("");
 }
 
 function activeSignal() {
-  if (state.sourceMode === "ideal") return state.record.signals.raw;
+  if (state.sourceMode === "ideal" || state.sourceMode === "clean") {
+    return state.record.signals.raw;
+  }
   return state.record.signals[state.measurementSignal];
 }
 
 function signalLabel() {
   if (state.sourceMode === "ideal") return "Ideal synthetic ECG";
+  if (state.sourceMode === "clean") return "LUDB real Lead II · physical mV";
   return state.measurementSignal === "raw" ? "Raw ECG" : "Source filtered ECG";
 }
 
@@ -640,9 +737,13 @@ function syncWindowControls() {
 }
 
 function updateGridLabel() {
-  el.gridScale.textContent = state.sourceMode === "ideal"
-    ? "Small box: 40 ms × 0.1 mV (synthetic)"
-    : "Small box: 40 ms × " + state.verticalGridAdc + " ΔADC";
+  if (state.sourceMode === "ideal") {
+    el.gridScale.textContent = "Small box: 40 ms × 0.1 mV (synthetic)";
+  } else if (state.sourceMode === "clean") {
+    el.gridScale.textContent = "Small box: 40 ms × 0.1 mV (real source units)";
+  } else {
+    el.gridScale.textContent = "Small box: 40 ms × " + state.verticalGridAdc + " ΔADC";
+  }
 }
 
 function resizeCanvas() {
@@ -674,15 +775,25 @@ function draw() {
   const [start,end] = visibleSampleRange();
   const raw = state.record.signals.raw.slice(start,end);
   const filtered = state.record.signals.filtered.slice(start,end);
-  const displayed = state.sourceMode === "ideal"
-    ? raw
-    : (state.mode === "raw" ? raw : state.mode === "filtered" ? filtered : raw.concat(filtered));
+
+  let displayed;
+  if (state.sourceMode === "ideal" || state.sourceMode === "clean") {
+    displayed = raw;
+  } else {
+    displayed = state.mode === "raw" ? raw : state.mode === "filtered" ? filtered : raw.concat(filtered);
+  }
 
   let yMin;
   let yMax;
   if (state.sourceMode === "ideal") {
     yMin = -0.4;
     yMax = 1.2;
+  } else if (state.sourceMode === "clean") {
+    const min = Math.min(...displayed,state.baseline);
+    const max = Math.max(...displayed,state.baseline);
+    const span = Math.max(0.2,max-min);
+    yMin = Math.floor((min-span*.10)/0.1)*0.1;
+    yMax = Math.ceil((max+span*.10)/0.1)*0.1;
   } else {
     const min = Math.min(...displayed,state.baseline);
     const max = Math.max(...displayed,state.baseline);
@@ -705,6 +816,8 @@ function draw() {
 
   if (state.sourceMode === "ideal") {
     drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--cyan"),1.7*dpr);
+  } else if (state.sourceMode === "clean") {
+    drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--emerald"),1.55*dpr);
   } else {
     if (state.mode === "raw" || state.mode === "overlay") {
       drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--emerald"),1.35*dpr);
@@ -715,8 +828,13 @@ function draw() {
   }
 
   if (state.showAnnotations) {
-    if (state.sourceMode === "ideal") drawIdealNotation(start,end,yMin,yMax,dpr);
-    else drawRealAnnotations(start,end,dpr);
+    if (state.sourceMode === "ideal") {
+      drawIdealNotation(start,end,yMin,yMax,dpr);
+    } else if (state.sourceMode === "clean") {
+      drawCleanAnnotations(start,end,yMin,yMax,dpr);
+    } else {
+      drawRealAnnotations(start,end,dpr);
+    }
   }
 
   drawCaliper(state.calipers.a,"A",cssColor("--cyan"),start,end,dpr);
@@ -736,9 +854,12 @@ function drawGrid(start,end,yMin,yMax,dpr) {
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();
   }
 
-  const step=state.sourceMode==="ideal" ? IDEAL_ECG_SPEC.vertical_small_box_mV : state.verticalGridAdc;
+  const step=(state.sourceMode==="ideal" || state.sourceMode==="clean")
+    ? 0.1
+    : state.verticalGridAdc;
   const lower=Math.floor((yMin-state.baseline)/step);
   const upper=Math.ceil((yMax-state.baseline)/step);
+
   for(let n=lower;n<=upper;n++){
     if(n===0)continue;
     const value=state.baseline+n*step;
@@ -796,6 +917,43 @@ function drawBracket(sampleA,sampleB,label,y,start,end,dpr){
   ctx.lineWidth=1*dpr;
   ctx.beginPath();ctx.moveTo(x1,y-4*dpr);ctx.lineTo(x1,y+4*dpr);ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.moveTo(x2,y-4*dpr);ctx.lineTo(x2,y+4*dpr);ctx.stroke();
   ctx.font=10*dpr+"px sans-serif";ctx.textAlign="center";ctx.fillText(label,(x1+x2)/2,y-4*dpr);ctx.textAlign="left";
+}
+
+
+function drawCleanAnnotations(start,end,yMin,yMax,dpr) {
+  const annotations=(state.record.annotations||[])
+    .filter(annotation => annotation.sample>=start && annotation.sample<end);
+  const signal=state.record.signals.raw;
+  const h=el.ecgCanvas.height;
+
+  ctx.font="bold "+10*dpr+"px sans-serif";
+  ctx.textAlign="center";
+
+  for(const annotation of annotations){
+    if(!["p","N","t"].includes(annotation.symbol))continue;
+    const x=xFor(annotation.sample,start,end);
+    const y=yFor(signal[annotation.sample],yMin,yMax,h);
+    const label=annotation.symbol==="p" ? "P" : annotation.symbol==="N" ? "QRS" : "T";
+    ctx.fillStyle=cssColor("--gold");
+    ctx.fillText(label,x,y-10*dpr);
+  }
+  ctx.textAlign="left";
+
+  const boundaries=annotations.filter(annotation =>
+    (annotation.symbol==="(" || annotation.symbol===")") &&
+    ["P","QRS","T"].includes(annotation.wave)
+  );
+  const rows={P:h-68*dpr,QRS:h-46*dpr,T:h-24*dpr};
+
+  for(let i=0;i<boundaries.length;i++){
+    const onset=boundaries[i];
+    if(onset.symbol!=="(")continue;
+    const endBoundary=boundaries.slice(i+1).find(annotation =>
+      annotation.symbol===")" && annotation.wave===onset.wave
+    );
+    if(!endBoundary)continue;
+    drawBracket(onset.sample,endBoundary.sample,onset.wave,rows[onset.wave],start,end,dpr);
+  }
 }
 
 function drawRealAnnotations(start,end,dpr){
@@ -911,8 +1069,9 @@ function showStatus(message,isError=false){
 
 function updateLogicPath(){
   const steps=[...document.querySelectorAll(".logic-step")];
+  const activeIndex = state.sourceMode === "ideal" ? 0 : state.sourceMode === "clean" ? 1 : 2;
   steps.forEach((node,index)=>{
-    node.classList.toggle("active", state.sourceMode==="ideal" ? index===0 : index===1);
+    node.classList.toggle("active", index===activeIndex);
   });
 }
 
