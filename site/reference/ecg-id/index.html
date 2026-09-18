@@ -71,37 +71,6 @@
       <span>This open recording contains the kinds of baseline and signal imperfections that make some measurements conditional. OPL preserves that uncertainty rather than flattening it away.</span>
     </section>
 
-    <section class="provenance" aria-labelledby="source-heading">
-      <div>
-        <p class="section-kicker">VISIBLE PROVENANCE</p>
-        <h2 id="source-heading">Current source</h2>
-      </div>
-      <details id="provenanceDetails" class="provenance-details" open>
-        <summary>
-          <span id="provenanceSummary">OPL idealized teaching template</span>
-          <span class="details-action">Source details</span>
-        </summary>
-        <div id="provenanceGrid" class="provenance-grid" aria-live="polite"></div>
-      </details>
-    </section>
-
-    <section class="ideal-notation ideal-only" id="idealGuide">
-      <div>
-        <p class="section-kicker">KNOWN BY CONSTRUCTION</p>
-        <h2>Normal ECG notation before real-world ambiguity</h2>
-        <p>P, Q, R, S and T landmarks and the isoelectric baseline are declared by the teaching model. The standard-style grid is therefore a true ruler for this synthetic signal: 40 ms horizontally and 0.1 mV vertically.</p>
-      </div>
-      <div class="ideal-metrics">
-        <div><span>Rate</span><strong>75 bpm</strong></div>
-        <div><span>RR</span><strong>800 ms</strong></div>
-        <div><span>PR</span><strong>155 ms</strong></div>
-        <div><span>QRS</span><strong>90 ms</strong></div>
-        <div><span>QT</span><strong>385 ms</strong></div>
-        <div><span>Baseline</span><strong>0 mV</strong></div>
-      </div>
-      <p class="ideal-warning">These values define an illustrative teaching template; they are not a clinical reference range and are not used as Paper 1 validation ground truth.</p>
-    </section>
-
     <section class="quick-toolbar teaching-only" aria-label="Teaching controls">
       <div class="quick-step ideal-only">
         <span class="step-number">1</span>
@@ -119,6 +88,22 @@
         <button type="button" data-quick-waveform="raw">Raw</button>
         <button type="button" data-quick-waveform="filtered">Filtered</button>
         <button type="button" data-quick-waveform="overlay" class="active">Overlay</button>
+      </div>
+    </section>
+
+    <section class="ideal-notation ideal-only compact-ideal" id="idealGuide">
+      <div class="compact-ideal-copy">
+        <p class="section-kicker">KNOWN BY CONSTRUCTION</p>
+        <h2>Textbook ruler before biological ambiguity</h2>
+        <p>Synthetic teaching model: declared P/Q/R/S/T landmarks, 0 mV baseline, 40 ms × 0.1 mV grid.</p>
+      </div>
+      <div class="ideal-metrics">
+        <div><span>Rate</span><strong>75 bpm</strong></div>
+        <div><span>RR</span><strong>800 ms</strong></div>
+        <div><span>PR</span><strong>155 ms</strong></div>
+        <div><span>QRS</span><strong>90 ms</strong></div>
+        <div><span>QT</span><strong>385 ms</strong></div>
+        <div><span>Baseline</span><strong>0 mV</strong></div>
       </div>
     </section>
 
@@ -249,6 +234,26 @@
           </div>
         </section>
       </div>
+
+      <nav class="stage-navigation" aria-label="Continue through ECG examples">
+        <button id="nextToClean" class="ideal-only stage-next" type="button">Next → Clean real ECG</button>
+        <button id="nextToImperfect" class="clean-only stage-next" type="button">Next → Imperfect real ECG</button>
+        <button id="backToClean" class="imperfect-only stage-back" type="button">← Compare with clean real ECG</button>
+      </nav>
+    </section>
+
+        <section class="provenance" aria-labelledby="source-heading">
+      <div>
+        <p class="section-kicker">VISIBLE PROVENANCE</p>
+        <h2 id="source-heading">Current source</h2>
+      </div>
+      <details id="provenanceDetails" class="provenance-details" open>
+        <summary>
+          <span id="provenanceSummary">OPL idealized teaching template</span>
+          <span class="details-action">Source details</span>
+        </summary>
+        <div id="provenanceGrid" class="provenance-grid" aria-live="polite"></div>
+      </details>
     </section>
 
 
