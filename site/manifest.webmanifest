@@ -1,8 +1,8 @@
 {
-  "name": "OpenPhysiologyLab Reference Labs",
-  "short_name": "OPL",
-  "description": "Open, transparent physiology Reference Labs built from trusted datasets.",
-  "start_url": "./",
+  "name": "OpenPhysiologyLab ECG Reference Lab",
+  "short_name": "OPL ECG",
+  "description": "Open-source ECG Reference Lab for transparent visualization, measurement and reproducible validation using trusted open data.",
+  "start_url": "./reference/ecg-id/index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f6f8fb",
@@ -24,5 +24,6 @@
       "sizes": "any",
       "type": "image/svg+xml"
     }
-  ]
+  ],
+  "id": "./reference/ecg-id/"
 }
