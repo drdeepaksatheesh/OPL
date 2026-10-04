@@ -784,3 +784,9 @@ body.mode-teaching #evidenceDrawer:not([open]) .drawer-body{display:none}
   .drawer-jump{flex:0 0 auto}
   footer{flex-direction:column;gap:4px}
 }
+
+#ecgCanvas{
+  cursor:crosshair;
+  user-select:none;
+  -webkit-user-select:none;
+}
