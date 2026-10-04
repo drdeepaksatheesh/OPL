@@ -56,6 +56,30 @@ try {
     assert.match(cleanPlotLegend, /Clean real Lead II/);
     const cleanBaseline = await page.locator("#baselineRealityText").innerText();
     assert.match(cleanBaseline, /cardiologist-delineated PR and TP segments/i);
+
+    const expertTable = await page.locator("#ludbMeasurementTable").innerText();
+    assert.match(expertTable, /QRS duration/i);
+    assert.match(expertTable, /QT interval/i);
+
+    const cleanRecord = await page.evaluate(async () => {
+      const response = await fetch("./data/LUDB_clean_LeadII.json");
+      return await response.json();
+    });
+    const qrsOnset = cleanRecord.annotations.find(a => a.symbol === "(" && a.wave === "QRS");
+    const qrsEnd = cleanRecord.annotations.find(a => a.symbol === ")" && a.wave === "QRS" && a.sample > qrsOnset.sample);
+    assert.ok(qrsOnset && qrsEnd);
+
+    // Clean stage defaults to 0–5 s at 500 Hz. Place manual calipers exactly on
+    // one cardiologist-delineated QRS pair and require reference agreement.
+    const cleanCanvas = page.locator("#ecgCanvas");
+    const cleanBox = await cleanCanvas.boundingBox();
+    const cleanVisibleSamples = 5 * cleanRecord.sampling_rate_hz;
+    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsOnset.sample / cleanVisibleSamples), y: cleanBox.height * 0.5}});
+    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsEnd.sample / cleanVisibleSamples), y: cleanBox.height * 0.5}});
+    const cleanAssist = await page.locator("#measurementAssist").innerText();
+    assert.match(cleanAssist, /QRS duration/i);
+    assert.match(cleanAssist, /cardiologist reference/i);
+
     await page.screenshot({path: out + "/mobile-clean.png", fullPage: true});
 
     await page.locator("#realSource").tap();
