@@ -36,16 +36,16 @@ try {
     const box = await canvas.boundingBox();
     assert.ok(box && box.width > 250 && box.width <= 390);
 
-    // Visible window is 0.1–2.1 s. Aim near P onset (~1.0 s) and QRS onset (~1.155 s)
+    // Visible window is 0.1–2.1 s. Aim near P onset (~1.0 s) and QRS onset (~1.160 s)
     // of the second complete beat so the guided calipers should identify a PR interval.
     await canvas.tap({position: {x: box.width * 0.45, y: box.height * 0.5}});
-    await canvas.tap({position: {x: box.width * 0.5275, y: box.height * 0.5}});
+    await canvas.tap({position: {x: box.width * 0.53, y: box.height * 0.5}});
     const idealMeasurement = await page.locator("#measurementGrid").innerText();
     assert.match(idealMeasurement, /mV/);
     assert.match(idealMeasurement, /Δt/);
     const assist = await page.locator("#measurementAssist").innerText();
     assert.match(assist, /PR interval/);
-    assert.match(assist, /model 155/);
+    assert.match(assist, /model 160/);
 
     await page.screenshot({path: out + "/mobile-ideal.png", fullPage: true});
 
