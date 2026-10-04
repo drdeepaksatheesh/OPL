@@ -49,9 +49,11 @@ try {
 
     await page.screenshot({path: out + "/mobile-ideal.png", fullPage: true});
 
-    await page.locator("#stageSelect").selectOption("clean");
+    await page.locator("#nextToClean").tap();
     await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "clean");
     assert.match((await page.getAttribute("body","class")) || "", /source-clean/);
+    assert.equal(await page.locator("#windowLength").inputValue(), "2");
     const cleanPlotLegend = await page.locator(".plot-card .legend").innerText();
     assert.match(cleanPlotLegend, /Clean real Lead II/);
     const cleanBaseline = await page.locator("#baselineRealityText").innerText();
@@ -70,23 +72,27 @@ try {
     const qrsEnd = cleanRecord.annotations.find(a => a.symbol === ")" && a.wave === "QRS" && a.sample > qrsOnset.sample);
     assert.ok(qrsOnset && qrsEnd);
 
-    // Clean stage defaults to 0–5 s at 500 Hz. Place manual calipers exactly on
-    // one cardiologist-delineated QRS pair and require reference agreement.
+    // Clean stage now uses the same 0–2 s teaching window as the ideal trace.
+    // Place manual calipers exactly on one cardiologist-delineated QRS pair.
     const cleanCanvas = page.locator("#ecgCanvas");
     const cleanBox = await cleanCanvas.boundingBox();
-    const cleanVisibleSamples = 5 * cleanRecord.sampling_rate_hz;
-    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsOnset.sample / cleanVisibleSamples), y: cleanBox.height * 0.5}});
-    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsEnd.sample / cleanVisibleSamples), y: cleanBox.height * 0.5}});
+    const cleanEndSample = 2 * cleanRecord.sampling_rate_hz - 1;
+    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsOnset.sample / cleanEndSample), y: cleanBox.height * 0.5}});
+    await cleanCanvas.tap({position: {x: cleanBox.width * (qrsEnd.sample / cleanEndSample), y: cleanBox.height * 0.5}});
     const cleanAssist = await page.locator("#measurementAssist").innerText();
     assert.match(cleanAssist, /QRS duration/i);
     assert.match(cleanAssist, /cardiologist reference/i);
 
     await page.screenshot({path: out + "/mobile-clean.png", fullPage: true});
 
-    await page.locator("#stageSelect").selectOption("real");
+    await page.locator("#nextToImperfect").tap();
     await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "real");
+    assert.equal(await page.locator("#windowLength").inputValue(), "2");
     const realBodyClass = await page.getAttribute("body", "class");
     assert.match(realBodyClass || "", /source-real/);
+    assert.match(await page.locator("#rulerSmallBox").innerText(), /40 ms × 50 ΔADC/);
+    assert.match(await page.locator("#rulerLargeBox").innerText(), /200 ms × 250 ΔADC/);
 
     await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
@@ -156,8 +162,14 @@ try {
 
     await page.screenshot({path: out + "/desktop-ideal.png", fullPage: true});
 
-    await page.locator("#stageSelect").selectOption("real");
+    await page.locator("#nextToClean").click();
     await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "clean");
+    assert.equal(await page.locator("#windowLength").inputValue(), "2");
+
+    await page.locator("#nextToImperfect").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "real");
     await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
     assert.match(validationText, /8\/8/);
