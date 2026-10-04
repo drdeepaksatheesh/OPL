@@ -58,7 +58,7 @@ const el = Object.fromEntries([
   "baselineOutput","baselineInput","baselineZero","baselineMedian","baselineFromA",
   "baselineConfident","baselineUncertain","baselineRealityText","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
-  "quickMode","advancedMode","themeToggle","idealSource","cleanSource","realSource",
+  "quickMode","advancedMode","themeToggle","stageSelect","dockDelta",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
   "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist",
@@ -102,8 +102,12 @@ async function boot() {
     state.realRecord = await getRecord(REAL_RECORD_ID).catch(() => null);
   }
 
-  el.cleanSource.disabled = !state.cleanRecord;
-  el.realSource.disabled = !state.realRecord;
+  if (el.stageSelect) {
+    const cleanOption = el.stageSelect.querySelector('option[value="clean"]');
+    const realOption = el.stageSelect.querySelector('option[value="real"]');
+    if (cleanOption) cleanOption.disabled = !state.cleanRecord;
+    if (realOption) realOption.disabled = !state.realRecord;
+  }
   el.onlineState.textContent = state.cleanRecord && state.realRecord
     ? (navigator.onLine ? "Reference data ready" : "Offline reference data")
     : "Some reference data unavailable";
@@ -116,7 +120,21 @@ function bindEvents() {
   el.advancedMode.addEventListener("click", () => setInterfaceMode("advanced"));
   el.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 
-  el.idealSource.addEventListener("click", () => switchSource("ideal", {restore:true}));
+  el.stageSelect?.addEventListener("change", () => {
+    const next = el.stageSelect.value;
+    if (next === "clean" && !state.cleanRecord) {
+      showStatus("The clean LUDB reference is unavailable in this build.", true);
+      el.stageSelect.value = state.sourceMode;
+      return;
+    }
+    if (next === "real" && !state.realRecord) {
+      showStatus("The ECG-ID reference is unavailable in this build/offline cache.", true);
+      el.stageSelect.value = state.sourceMode;
+      return;
+    }
+    switchSource(next, {restore:true});
+  });
+
   el.nextToClean?.addEventListener("click", () => {
     switchSource("clean", {restore:true});
     scrollToLab();
@@ -129,19 +147,14 @@ function bindEvents() {
     switchSource("clean", {restore:true});
     scrollToLab();
   });
-  el.cleanSource.addEventListener("click", () => {
-    if (!state.cleanRecord) {
-      showStatus("The clean LUDB reference is unavailable in this build.", true);
-      return;
-    }
-    switchSource("clean", {restore:true});
-  });
-  el.realSource.addEventListener("click", () => {
-    if (!state.realRecord) {
-      showStatus("The real ECG-ID record is unavailable in this build/offline cache.", true);
-      return;
-    }
-    switchSource("real", {restore:true});
+
+  document.querySelectorAll("[data-drawer-target]").forEach(button => {
+    button.addEventListener("click", () => {
+      const drawer = document.getElementById(button.dataset.drawerTarget);
+      if (!drawer) return;
+      drawer.open = true;
+      drawer.scrollIntoView({behavior:"smooth", block:"start"});
+    });
   });
 
   document.querySelectorAll("[data-quick-waveform]").forEach(button => {
@@ -336,9 +349,7 @@ function switchSource(mode, {restore=false, session=null} = {}) {
   document.body.classList.toggle("source-ideal", next === "ideal");
   document.body.classList.toggle("source-clean", next === "clean");
   document.body.classList.toggle("source-real", next === "real");
-  el.idealSource.classList.toggle("active", next === "ideal");
-  el.cleanSource.classList.toggle("active", next === "clean");
-  el.realSource.classList.toggle("active", next === "real");
+  if (el.stageSelect) el.stageSelect.value = next;
 
   const restored = session || (restore ? restoreSession(next) : null);
   state.calipers = {
@@ -423,7 +434,9 @@ function setInterfaceMode(mode, persist=true) {
   document.body.classList.toggle("mode-advanced", state.interfaceMode === "advanced");
   el.quickMode.setAttribute("aria-pressed", String(state.interfaceMode === "teaching"));
   el.advancedMode.setAttribute("aria-pressed", String(state.interfaceMode === "advanced"));
-  if (el.provenanceDetails) el.provenanceDetails.open = state.interfaceMode === "advanced";
+  if (el.provenanceDetails && state.interfaceMode === "advanced") {
+    el.provenanceDetails.open = true;
+  }
   if (persist) {
     try { localStorage.setItem(MODE_KEY, state.interfaceMode); } catch {}
   }
@@ -566,6 +579,12 @@ function renderMeasurements() {
   el.measurementGrid.innerHTML = rows.map(([label,value]) =>
     "<div><span>" + escapeHtml(label) + "</span><strong>" + escapeHtml(value) + "</strong></div>"
   ).join("");
+
+  if (el.dockDelta) {
+    el.dockDelta.textContent = fs && a != null && b != null
+      ? "Δt " + roundNumber(durationMs(a,b,fs), 1) + " ms"
+      : "Δt —";
+  }
 
   renderMeasurementAssist();
 
@@ -1226,15 +1245,11 @@ function showStatus(message,isError=false){
 }
 
 function updateLogicPath(){
-  const steps=[...document.querySelectorAll(".logic-step")];
-  const activeIndex = state.sourceMode === "ideal" ? 0 : state.sourceMode === "clean" ? 1 : 2;
-  steps.forEach((node,index)=>{
-    node.classList.toggle("active", index===activeIndex);
-  });
+  if (el.stageSelect) el.stageSelect.value = state.sourceMode;
 }
 
 function scrollToLab(){
-  document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth", block:"start"});
+  document.querySelector(".core-workspace")?.scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 function buildLabel(){
