@@ -16,6 +16,7 @@ const SHELL = [
   BASE + "reference/ecg-id/styles.css",
   BASE + "reference/ecg-id/app.mjs",
   BASE + "reference/ecg-id/ideal-ecg.mjs",
+  BASE + "reference/ecg-id/ludb-calipers.mjs",
   BASE + "reference/ecg-id/teaching.mjs",
   BASE + "reference/ecg-id/manifest.json",
   BASE + "icons/icon.svg"
