@@ -267,6 +267,18 @@
       <div id="cleanSelectionSummary" class="clean-selection-stats"></div>
     </section>
 
+    <section class="reference-measurements clean-only">
+      <div class="reference-measurements-head">
+        <div>
+          <p class="section-kicker">CARDIOLOGIST REFERENCE</p>
+          <h2>Real ECG intervals from LUDB manual delineation</h2>
+          <p>These durations are reconstructed directly from the LUDB cardiologist annotation sample positions. They are the reference against which manual caliper placement can be compared; they are not OPL automated delineation outputs.</p>
+        </div>
+        <button id="downloadLudbMeasurements" type="button">Download expert-reference table</button>
+      </div>
+      <div id="ludbMeasurementTable" class="reference-measurement-table" aria-live="polite"></div>
+    </section>
+
     <section class="reality-card imperfect-only">
       <div>
         <p class="section-kicker">WHEN THE BASELINE WANDERS</p>
