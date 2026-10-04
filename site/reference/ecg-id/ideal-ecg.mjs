@@ -203,7 +203,7 @@ const IDEAL_INTERVAL_ENDPOINT_KEYS = Object.freeze([
   "p_onset","p_end","qrs_onset","qrs_end","t_onset","t_end","r"
 ]);
 
-function nearestIdealIntervalEndpoint(record, sample, toleranceMs = 30) {
+export function nearestIdealIntervalEndpoint(record, sample, toleranceMs = 30) {
   if (!record || !Number.isInteger(sample)) return null;
   const fs = Number(record.sampling_rate_hz);
   const toleranceSamples = Math.round((Number(toleranceMs) / 1000) * fs);
