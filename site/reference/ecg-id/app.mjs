@@ -1076,13 +1076,19 @@ function syncWindowControls() {
   el.windowLength.value = String(state.windowSeconds);
 }
 
+function verticalSmallBoxValue() {
+  return (state.sourceMode === "ideal" || state.sourceMode === "clean")
+    ? 0.1
+    : state.verticalGridAdc;
+}
+
 function updateGridLabel() {
   if (state.sourceMode === "ideal") {
-    el.gridScale.textContent = "Small box: 40 ms × 0.1 mV (synthetic)";
+    el.gridScale.textContent = "ECG paper: square boxes · 40 ms × 0.1 mV (synthetic)";
   } else if (state.sourceMode === "clean") {
-    el.gridScale.textContent = "Small box: 40 ms × 0.1 mV (real source units)";
+    el.gridScale.textContent = "ECG paper: square boxes · 40 ms × 0.1 mV";
   } else {
-    el.gridScale.textContent = "Small box: 40 ms × " + state.verticalGridAdc + " ΔADC";
+    el.gridScale.textContent = "Square display boxes · 40 ms × " + state.verticalGridAdc + " ΔADC";
   }
 }
 
@@ -1123,27 +1129,30 @@ function draw() {
     displayed = state.mode === "raw" ? raw : state.mode === "filtered" ? filtered : raw.concat(filtered);
   }
 
-  let yMin;
-  let yMax;
-  if (state.sourceMode === "ideal") {
-    yMin = -0.4;
-    yMax = 1.2;
-  } else if (state.sourceMode === "clean") {
-    const min = Math.min(...displayed,state.baseline);
-    const max = Math.max(...displayed,state.baseline);
-    const span = Math.max(0.2,max-min);
-    yMin = Math.floor((min-span*.10)/0.1)*0.1;
-    yMax = Math.ceil((max+span*.10)/0.1)*0.1;
-  } else {
-    const min = Math.min(...displayed,state.baseline);
-    const max = Math.max(...displayed,state.baseline);
-    const span = Math.max(1,max-min);
-    yMin = min - span*.12;
-    yMax = max + span*.12;
-  }
+  const fs = Number(state.record.sampling_rate_hz);
+  const visibleDurationSeconds = Math.max(
+    1 / fs,
+    (end - start - 1) / fs
+  );
+  const verticalSmallBox = verticalSmallBoxValue();
+  const dataMin = Math.min(...displayed,state.baseline);
+  const dataMax = Math.max(...displayed,state.baseline);
+  const paperRange = computeSquarePaperRange({
+    widthPx:w,
+    heightPx:h,
+    visibleDurationSeconds,
+    verticalSmallBox,
+    baseline:state.baseline,
+    dataMin,
+    dataMax,
+    marginBoxes:1
+  });
+  const yMin = paperRange.yMin;
+  const yMax = paperRange.yMax;
 
   const dpr = Math.max(1,window.devicePixelRatio||1);
   drawGrid(start,end,yMin,yMax,dpr);
+  drawCaliperSpan(state.calipers.a,state.calipers.b,start,end,dpr);
 
   const yBaseline = yFor(state.baseline,yMin,yMax,h);
   ctx.strokeStyle = cssColor("--silver");
@@ -1183,20 +1192,20 @@ function draw() {
 
 function drawGrid(start,end,yMin,yMax,dpr) {
   const w=el.ecgCanvas.width,h=el.ecgCanvas.height,fs=state.record.sampling_rate_hz;
-  const startTime=start/fs,endTime=end/fs;
+  const startTime=start/fs;
+  const endTime=(end-1)/fs;
+  const duration=Math.max(1/fs,endTime-startTime);
 
-  const first=Math.ceil(startTime/.04)*.04;
-  for(let t=first;t<=endTime+1e-9;t+=.04){
+  const first=Math.ceil((startTime-1e-12)/ECG_PAPER_TIME_SMALL_BOX_S)*ECG_PAPER_TIME_SMALL_BOX_S;
+  for(let t=first;t<=endTime+1e-9;t+=ECG_PAPER_TIME_SMALL_BOX_S){
     const major=Math.abs((t/.2)-Math.round(t/.2))<1e-7;
     ctx.strokeStyle=major?cssColor("--grid-major"):cssColor("--grid-minor");
     ctx.lineWidth=(major?1:.55)*dpr;
-    const x=(t-startTime)/(endTime-startTime)*w;
+    const x=(t-startTime)/duration*w;
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();
   }
 
-  const step=(state.sourceMode==="ideal" || state.sourceMode==="clean")
-    ? 0.1
-    : state.verticalGridAdc;
+  const step=verticalSmallBoxValue();
   const lower=Math.floor((yMin-state.baseline)/step);
   const upper=Math.ceil((yMax-state.baseline)/step);
 
@@ -1244,9 +1253,21 @@ function drawIdealNotation(start,end,yMin,yMax,dpr) {
   }
   ctx.textAlign="left";
 
-  drawBracket(lm.p_onset,lm.qrs_onset,"PR",el.ecgCanvas.height-68*dpr,start,end,dpr);
-  drawBracket(lm.qrs_onset,lm.qrs_end,"QRS",el.ecgCanvas.height-46*dpr,start,end,dpr);
-  drawBracket(lm.qrs_onset,lm.t_end,"QT",el.ecgCanvas.height-24*dpr,start,end,dpr);
+  drawBracket(
+    lm.p_onset,lm.qrs_onset,
+    "PR · " + IDEAL_ECG_SPEC.teaching_measurements.pr_interval_ms + " ms",
+    el.ecgCanvas.height-68*dpr,start,end,dpr
+  );
+  drawBracket(
+    lm.qrs_onset,lm.qrs_end,
+    "QRS · " + IDEAL_ECG_SPEC.teaching_measurements.qrs_duration_ms + " ms",
+    el.ecgCanvas.height-46*dpr,start,end,dpr
+  );
+  drawBracket(
+    lm.qrs_onset,lm.t_end,
+    "QT · " + IDEAL_ECG_SPEC.teaching_measurements.qt_interval_ms + " ms",
+    el.ecgCanvas.height-24*dpr,start,end,dpr
+  );
 }
 
 function drawBracket(sampleA,sampleB,label,y,start,end,dpr){
@@ -1310,6 +1331,27 @@ function drawRealAnnotations(start,end,dpr){
     ctx.fillText(label,x+2*dpr,13*dpr);
     ctx.globalAlpha=1;
   }
+}
+
+function drawCaliperSpan(sampleA,sampleB,start,end,dpr){
+  if(!Number.isInteger(sampleA)||!Number.isInteger(sampleB))return;
+  const left=Math.max(start,Math.min(sampleA,sampleB));
+  const right=Math.min(end-1,Math.max(sampleA,sampleB));
+  if(right<start||left>=end||right<=left)return;
+
+  const x1=xFor(left,start,end);
+  const x2=xFor(right,start,end);
+  ctx.fillStyle=cssColor("--cyan");
+  ctx.globalAlpha=.055;
+  ctx.fillRect(x1,0,x2-x1,el.ecgCanvas.height);
+  ctx.globalAlpha=1;
+
+  const duration=durationMs(left,right,state.record.sampling_rate_hz);
+  ctx.fillStyle=cssColor("--text-secondary");
+  ctx.font="bold "+10*dpr+"px sans-serif";
+  ctx.textAlign="center";
+  ctx.fillText(roundNumber(duration,1)+" ms",(x1+x2)/2,14*dpr);
+  ctx.textAlign="left";
 }
 
 function drawCaliper(sample,label,color,start,end,dpr){
