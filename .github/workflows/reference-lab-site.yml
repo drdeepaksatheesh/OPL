@@ -166,6 +166,9 @@ jobs:
             if (-not (Test-Path (Join-Path $site 'START_OPL_PHONE_TEST.cmd'))) {
               throw 'Phone-test launcher missing from built artifact.'
             }
+            if (-not (Test-Path (Join-Path $site 'START_OPL_REFERENCE_LAB.ps1'))) {
+              throw 'PowerShell startup bootstrap missing from built artifact.'
+            }
 
             Write-Host 'Windows local-only launcher/server smoke test passed.'
           }
@@ -205,6 +208,43 @@ jobs:
           finally {
             if ($lanServer -and -not $lanServer.HasExited) {
               Stop-Process -Id $lanServer.Id -Force
+            }
+          }
+
+          $bootstrapScript = Join-Path $site 'START_OPL_REFERENCE_LAB.ps1'
+          $bootstrap = Start-Process powershell.exe -ArgumentList @(
+            '-NoLogo',
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $bootstrapScript,
+            '-StartPort', '8767',
+            '-NoBrowser'
+          ) -PassThru -WindowStyle Hidden
+
+          try {
+            $bootstrapReady = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $bootstrapResponse = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8767/reference/ecg-id/index.html' -TimeoutSec 2
+                if ($bootstrapResponse.StatusCode -eq 200 -and $bootstrapResponse.Content -match 'ECG Reference Lab') {
+                  $bootstrapReady = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $bootstrapReady) {
+              if (Test-Path (Join-Path $site 'OPL_STARTUP_LOG.txt')) {
+                Get-Content (Join-Path $site 'OPL_STARTUP_LOG.txt')
+              }
+              throw 'Windows OPL bootstrap did not become ready.'
+            }
+            Write-Host 'Windows end-user bootstrap smoke test passed.'
+          }
+          finally {
+            if ($bootstrap -and -not $bootstrap.HasExited) {
+              Stop-Process -Id $bootstrap.Id -Force
             }
           }
 
