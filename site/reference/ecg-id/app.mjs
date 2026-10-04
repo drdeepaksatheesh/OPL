@@ -69,6 +69,7 @@ const el = Object.fromEntries([
   "baselineConfident","baselineUncertain","baselineRealityText","resetCalipers",
   "measurementGrid","saveOffline","exportPackage","importPackage","keepStatus",
   "quickMode","advancedMode","themeToggle","stageSelect","dockDelta",
+  "nextToClean","nextToImperfect","backToClean","rulerSmallBox","rulerLargeBox",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
   "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist",
@@ -131,6 +132,9 @@ async function boot() {
     if (cleanOption) cleanOption.disabled = !state.cleanRecord;
     if (realOption) realOption.disabled = !state.realRecord;
   }
+  if (el.nextToClean) el.nextToClean.disabled = !state.cleanRecord;
+  if (el.nextToImperfect) el.nextToImperfect.disabled = !state.realRecord;
+  if (el.backToClean) el.backToClean.disabled = !state.cleanRecord;
   el.onlineState.textContent = state.cleanRecord && state.realRecord
     ? (navigator.onLine ? "Reference data ready" : "Offline reference data")
     : "Some reference data unavailable";
@@ -159,10 +163,18 @@ function bindEvents() {
   });
 
   el.nextToClean?.addEventListener("click", () => {
+    if (!state.cleanRecord) {
+      showStatus("The clean LUDB reference is unavailable in this build.", true);
+      return;
+    }
     switchSource("clean", {restore:true});
     scrollToLab();
   });
   el.nextToImperfect?.addEventListener("click", () => {
+    if (!state.realRecord) {
+      showStatus("The ECG-ID reference is unavailable in this build.", true);
+      return;
+    }
     switchSource("real", {restore:true});
     scrollToLab();
   });
@@ -205,6 +217,7 @@ function bindEvents() {
   el.verticalGrid.addEventListener("change", () => {
     state.verticalGridAdc = Number(el.verticalGrid.value);
     updateGridLabel();
+    updateRuler();
     draw();
   });
 
@@ -531,7 +544,7 @@ function switchSource(mode, {restore=false, session=null} = {}) {
     state.baselineStatus = "reference";
     state.mode = "raw";
     state.measurementSignal = "raw";
-    state.windowSeconds = 5;
+    state.windowSeconds = 2;
     state.windowStartSeconds = 0;
     state.showAnnotations = true;
   } else {
@@ -539,7 +552,7 @@ function switchSource(mode, {restore=false, session=null} = {}) {
     state.baselineStatus = restored?.baseline_status === "uncertain" ? "uncertain" : "selected";
     state.mode = "overlay";
     state.measurementSignal = "raw";
-    state.windowSeconds = 5;
+    state.windowSeconds = 2;
     state.windowStartSeconds = 0;
     state.showAnnotations = true;
   }
@@ -561,6 +574,7 @@ function renderAll() {
   renderValidation();
   syncQuickWaveformButtons();
   updateGridLabel();
+  updateRuler();
   updateLogicPath();
   draw();
 }
@@ -1080,6 +1094,18 @@ function syncWindowControls() {
   el.windowStart.value = String(Math.min(max,state.windowStartSeconds));
   el.windowStartLabel.textContent = roundNumber(state.windowStartSeconds,3) + " s";
   el.windowLength.value = String(state.windowSeconds);
+}
+
+function updateRuler() {
+  if (!el.rulerSmallBox || !el.rulerLargeBox) return;
+  if (state.sourceMode === "real") {
+    const small = Number(state.verticalGridAdc);
+    el.rulerSmallBox.textContent = "40 ms × " + small + " ΔADC";
+    el.rulerLargeBox.textContent = "200 ms × " + (small * 5) + " ΔADC";
+  } else {
+    el.rulerSmallBox.textContent = "40 ms × 0.1 mV";
+    el.rulerLargeBox.textContent = "200 ms × 0.5 mV";
+  }
 }
 
 function verticalSmallBoxValue() {
