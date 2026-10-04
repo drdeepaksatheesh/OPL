@@ -197,3 +197,76 @@ The LUDB example is independent biological data in physical units with manual ca
 Quantitative validation claims are counter-verified against appropriate independent open physiological data, metadata and annotations.
 
 The clean-real example is not called “normal ground truth” merely because it looks textbook-like. It is a reproducibly selected biological bridge between the model and messier recordings.
+
+
+## Instrument interface architecture
+
+The ECG Reference Lab should behave like a physiology instrument, not a long documentation page.
+
+### Persistent primary workspace
+
+The primary screen keeps the scientific task visible:
+
+- stage selector;
+- ECG waveform;
+- grid and signal legend;
+- manual A/B calipers;
+- immediate measurement interpretation;
+- baseline state;
+- stage navigation.
+
+The signal remains the visual centre of the application.
+
+### Measurement dock
+
+On larger screens a compact measurement dock remains beside the waveform. It contains collapsible surfaces for:
+
+- caliper geometry;
+- baseline/reference state;
+- LUDB expert comparison when applicable;
+- R–R timing preview for biological recordings.
+
+On narrow/mobile screens the same surfaces stack below the waveform rather than becoming a separate application.
+
+### Drawers
+
+Information that supports the measurement but is not required continuously is placed in collapsible drawers:
+
+1. **Source & teaching notes**
+   - provenance;
+   - DOI/licence/version;
+   - teaching-model parameters;
+   - clean-record selection evidence;
+   - reasoning rule.
+
+2. **View & measurement controls**
+   - signal display;
+   - measurement signal;
+   - grid;
+   - window length/start;
+   - annotations.
+
+3. **Evidence & reproducibility**
+   - cardiologist-derived LUDB interval table;
+   - ECG-ID source-integrity checks;
+   - downloadable validation outputs;
+   - explicit claim boundaries.
+
+4. **Concept check**
+   - optional reasoning questions;
+   - not part of the core Paper 1 validation claim.
+
+5. **Offline, export & saved packages**
+   - local storage;
+   - reproducible OPL Reference Packages;
+   - re-opening saved sessions.
+
+### Teaching vs Advanced
+
+**Teaching mode** keeps technical drawers collapsed by default so the learner reaches the signal immediately.
+
+**Advanced mode** exposes technical control/evidence drawers for deeper inspection without changing the underlying data or measurement model.
+
+This layout principle should be reused across future OPL instruments:
+
+> **signal in the centre; measurement beside it; provenance, controls and validation in drawers.**
