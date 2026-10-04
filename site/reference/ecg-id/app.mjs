@@ -11,6 +11,11 @@ import {
 import {saveRecord, getRecord} from "../../offline-store.mjs";
 import {validateReferenceIntegrity, makeValidationReport} from "../../reference-validation.mjs";
 import {generateIdealEcg, IDEAL_ECG_SPEC, nearestIdealLandmark, interpretIdealCalipers} from "./ideal-ecg.mjs";
+import {
+  interpretLudbCalipers,
+  summarizeLudbReferenceIntervals,
+  makeLudbReferenceMeasurementReport
+} from "./ludb-calipers.mjs";
 import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
 
 const IMPERFECT_RECORD_URL = "./data/Person_01_rec_1.json";
@@ -56,7 +61,8 @@ const el = Object.fromEntries([
   "quickMode","advancedMode","themeToggle","idealSource","cleanSource","realSource",
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
-  "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist"
+  "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist",
+  "ludbMeasurementTable","downloadLudbMeasurements"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -233,6 +239,17 @@ function bindEvents() {
       : "Saved the ECG-ID reference locally in this browser.");
   });
 
+  el.downloadLudbMeasurements?.addEventListener("click", () => {
+    if (!state.cleanRecord) return;
+    const report = makeLudbReferenceMeasurementReport(state.cleanRecord);
+    report.opl = {
+      version: window.OPL_CONFIG?.version || "unknown",
+      commit: state.buildInfo?.git_sha || "unknown"
+    };
+    downloadJson("OPL_LUDB_clean_LeadII_expert-reference-measurements.json", report);
+    showStatus("Downloaded LUDB cardiologist-derived interval measurements for this exact reference record.");
+  });
+
   el.downloadValidation.addEventListener("click", () => {
     if (state.sourceMode !== "real" || !state.realRecord) return;
     const report = makeValidationReport({
@@ -368,6 +385,7 @@ function renderAll() {
   renderMeasurements();
   renderBaselineReality();
   renderCleanSelection();
+  renderLudbReferenceTable();
   renderRrBridge();
   renderValidation();
   syncQuickWaveformButtons();
@@ -580,52 +598,108 @@ function idealCursorText(sample, value) {
 
 function renderMeasurementAssist() {
   if (!el.measurementAssist) return;
-  if (state.sourceMode !== "ideal") {
-    el.measurementAssist.innerHTML = "";
-    return;
-  }
 
   const a = state.calipers.a;
   const b = state.calipers.b;
-  if (a == null && b == null) {
+
+  if (state.sourceMode === "ideal") {
+    if (a == null && b == null) {
+      el.measurementAssist.innerHTML =
+        "<strong>Landmark assist:</strong> place A and B near the boundaries of a P wave, PR interval, QRS complex, QT interval, or successive R peaks.";
+      return;
+    }
+
+    if (a == null || b == null) {
+      const sample = a ?? b;
+      const landmark = nearestIdealLandmark(state.record, sample, 30);
+      el.measurementAssist.innerHTML = landmark
+        ? "<strong>Landmark assist:</strong> first caliper is near " + escapeHtml(landmark.label) + ". Place the second boundary."
+        : "<strong>Landmark assist:</strong> first caliper is not within 30 ms of a declared landmark.";
+      return;
+    }
+
+    const interpretation = interpretIdealCalipers(state.record, a, b, 30);
+    if (!interpretation.measurement) {
+      const aLabel = interpretation.a?.label || "an unlabeled boundary";
+      const bLabel = interpretation.b?.label || "an unlabeled boundary";
+      el.measurementAssist.innerHTML =
+        "<strong>Landmark assist:</strong> A is near " + escapeHtml(aLabel) +
+        " and B is near " + escapeHtml(bLabel) +
+        ". OPL does not recognize that pair as one of the declared teaching intervals.";
+      return;
+    }
+
+    const m = interpretation.measurement;
+    const error = roundNumber(m.error_ms, 1);
+    const absError = Math.abs(error);
+    const cls = absError <= 10 ? "good" : "warn";
+    const difference = error === 0 ? "exactly matches" :
+      (error > 0 ? "+" : "") + error + " ms from";
+
     el.measurementAssist.innerHTML =
-      "<strong>Landmark assist:</strong> place A and B near the boundaries of a P wave, PR interval, QRS complex, QT interval, or successive R peaks.";
+      "<strong>" + escapeHtml(m.label) + "</strong> · measured " +
+      escapeHtml(String(roundNumber(m.measured_ms, 1))) + " ms · model " +
+      escapeHtml(String(roundNumber(m.expected_ms, 1))) + " ms · <span class=\"" + cls + "\">" +
+      escapeHtml(difference) + " model</span>. " +
+      "This is manual placement feedback; OPL has not moved your calipers.";
     return;
   }
 
-  if (a == null || b == null) {
-    const sample = a ?? b;
-    const landmark = nearestIdealLandmark(state.record, sample, 30);
-    el.measurementAssist.innerHTML = landmark
-      ? "<strong>Landmark assist:</strong> first caliper is near " + escapeHtml(landmark.label) + ". Place the second boundary."
-      : "<strong>Landmark assist:</strong> first caliper is not within 30 ms of a declared landmark.";
-    return;
-  }
+  if (state.sourceMode === "clean") {
+    if (a == null && b == null) {
+      el.measurementAssist.innerHTML =
+        "<strong>Expert-reference assist:</strong> place A and B on a real P/QRS/T boundary. OPL will compare your manual placement with the LUDB cardiologist delineation.";
+      return;
+    }
+    if (a == null || b == null) {
+      el.measurementAssist.innerHTML =
+        "<strong>Expert-reference assist:</strong> first caliper placed. Select the second boundary; OPL will not snap either cursor.";
+      return;
+    }
 
-  const interpretation = interpretIdealCalipers(state.record, a, b, 30);
-  if (!interpretation.measurement) {
-    const aLabel = interpretation.a?.label || "an unlabeled point";
-    const bLabel = interpretation.b?.label || "an unlabeled point";
+    const result = interpretLudbCalipers(state.record, a, b, 40);
+    const m = result.measurement;
+    if (!m) {
+      el.measurementAssist.innerHTML =
+        "<strong>Expert-reference assist:</strong> this A/B pair is not within 40 ms of both endpoints of a recognized LUDB reference interval. Keep the manual measurement, or reposition the boundaries.";
+      return;
+    }
+
+    const error = roundNumber(m.error_ms, 1);
+    const cls = Math.abs(error) <= 10 ? "good" : "warn";
+    const errorText = error === 0 ? "matches the reference" :
+      (error > 0 ? "+" : "") + error + " ms vs reference";
+
     el.measurementAssist.innerHTML =
-      "<strong>Landmark assist:</strong> A is near " + escapeHtml(aLabel) +
-      " and B is near " + escapeHtml(bLabel) +
-      ". OPL does not recognize that pair as one of the declared teaching intervals.";
+      "<strong>" + escapeHtml(m.label) + "</strong> · your calipers " +
+      escapeHtml(String(roundNumber(m.measured_ms,1))) + " ms · cardiologist reference " +
+      escapeHtml(String(roundNumber(m.reference_ms,1))) + " ms · <span class=\"" + cls + "\">" +
+      escapeHtml(errorText) + "</span>. " +
+      "Endpoint differences: A " + escapeHtml(formatSigned(roundNumber(m.start_error_ms,1))) +
+      " ms, B " + escapeHtml(formatSigned(roundNumber(m.end_error_ms,1))) + " ms.";
     return;
   }
 
-  const m = interpretation.measurement;
-  const error = roundNumber(m.error_ms, 1);
-  const absError = Math.abs(error);
-  const cls = absError <= 10 ? "good" : "warn";
-  const difference = error === 0 ? "exactly matches" :
-    (error > 0 ? "+" : "") + error + " ms from";
+  el.measurementAssist.innerHTML = "";
+}
 
-  el.measurementAssist.innerHTML =
-    "<strong>" + escapeHtml(m.label) + "</strong> · measured " +
-    escapeHtml(String(roundNumber(m.measured_ms, 1))) + " ms · model " +
-    escapeHtml(String(roundNumber(m.expected_ms, 1))) + " ms · <span class=\"" + cls + "\">" +
-    escapeHtml(difference) + " model</span>. " +
-    "This is manual placement feedback; OPL has not moved your calipers.";
+function renderLudbReferenceTable() {
+  if (!el.ludbMeasurementTable) return;
+  if (state.sourceMode !== "clean" || !state.cleanRecord) {
+    el.ludbMeasurementTable.innerHTML = "";
+    return;
+  }
+
+  const rows = summarizeLudbReferenceIntervals(state.cleanRecord);
+  el.ludbMeasurementTable.innerHTML = rows.map(row =>
+    '<div class="reference-measurement-row">' +
+      '<span>' + escapeHtml(row.label) + '</span>' +
+      '<strong>' + escapeHtml(String(roundNumber(row.median_ms,1))) + ' ms median</strong>' +
+      '<small>n=' + escapeHtml(String(row.n)) + ' · range ' +
+      escapeHtml(String(roundNumber(row.min_ms,1))) + '–' +
+      escapeHtml(String(roundNumber(row.max_ms,1))) + ' ms</small>' +
+    '</div>'
+  ).join("");
 }
 
 function cursorText(sample, value) {
