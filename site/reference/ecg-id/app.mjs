@@ -434,8 +434,15 @@ function setInterfaceMode(mode, persist=true) {
   document.body.classList.toggle("mode-advanced", state.interfaceMode === "advanced");
   el.quickMode.setAttribute("aria-pressed", String(state.interfaceMode === "teaching"));
   el.advancedMode.setAttribute("aria-pressed", String(state.interfaceMode === "advanced"));
-  if (el.provenanceDetails && state.interfaceMode === "advanced") {
-    el.provenanceDetails.open = true;
+  const controlsDrawer = document.getElementById("controlsDrawer");
+  const evidenceDrawer = document.getElementById("evidenceDrawer");
+  if (state.interfaceMode === "advanced") {
+    if (controlsDrawer) controlsDrawer.open = true;
+    if (evidenceDrawer) evidenceDrawer.open = true;
+    if (el.provenanceDetails) el.provenanceDetails.open = true;
+  } else if (persist) {
+    if (controlsDrawer) controlsDrawer.open = false;
+    if (evidenceDrawer) evidenceDrawer.open = false;
   }
   if (persist) {
     try { localStorage.setItem(MODE_KEY, state.interfaceMode); } catch {}
