@@ -270,3 +270,42 @@ Information that supports the measurement but is not required continuously is pl
 This layout principle should be reused across future OPL instruments:
 
 > **signal in the centre; measurement beside it; provenance, controls and validation in drawers.**
+
+
+## ECG paper and caliper interaction rules
+
+### Square-paper geometry
+
+When the vertical signal is expressed in physical mV, the display must reproduce the standard ECG-paper relationship:
+
+- 1 small horizontal box = 40 ms;
+- 1 small vertical box = 0.1 mV;
+- those two small boxes occupy the **same number of screen pixels**.
+
+The app must therefore derive the visible vertical range from the horizontal time scale and canvas aspect ratio rather than independently stretching the x and y axes.
+
+For non-calibrated ADC recordings the same visual square-box principle may be used with the declared digital vertical step (for example 50 ΔADC), but the UI must never relabel that step as 0.1 mV without a validated physical calibration profile.
+
+### Caliper interaction
+
+The primary measurement gesture is:
+
+> press/touch at the first boundary → drag to the second boundary → release.
+
+The earlier endpoint becomes A and the later endpoint becomes B.
+
+The app also retains:
+
+- click/tap A then click/tap B;
+- drag an existing A or B line to refine that endpoint;
+- sample anchoring throughout all interactions.
+
+Calipers must not silently snap to model or expert-reference annotations.
+
+### Synthetic-model fiducials
+
+A declared teaching fiducial should be visually consistent with the synthetic waveform.
+
+In particular, P-wave onset/end should lie close enough to the isoelectric baseline that the learner does not see a contradiction between the labelled boundary and the drawn morphology.
+
+Reference/model annotations may explain or compare the learner's placement, but should not overwrite it.
