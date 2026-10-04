@@ -61,6 +61,56 @@
       </div>
     </section>
 
+    <section class="ecg-ruler-strip" aria-label="ECG paper ruler and common adult timing references">
+      <div class="ruler-heading">
+        <span class="section-kicker">ECG RULER</span>
+        <strong>Paper → time → potential</strong>
+        <small class="ideal-only">Teaching calibration: 25 mm/s · 10 mm/mV</small>
+        <small class="clean-only">Source in physical mV · display uses 25 mm/s · 10 mm/mV convention</small>
+        <small class="imperfect-only">Time ruler is physical; vertical ruler is relative ADC, not calibrated mV</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>Small box</span>
+        <strong id="rulerSmallBox">40 ms × 0.1 mV</strong>
+        <small class="ideal-only">1 mm × 1 mm equivalent</small>
+        <small class="clean-only">1 mm × 1 mm equivalent</small>
+        <small class="imperfect-only">same time; relative vertical step</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>Large box</span>
+        <strong id="rulerLargeBox">200 ms × 0.5 mV</strong>
+        <small>5 × 5 small boxes</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>P duration</span>
+        <strong>≤ 3 small boxes</strong>
+        <small>≤ 120 ms</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>PR interval</span>
+        <strong>3–5 small boxes</strong>
+        <small>120–200 ms</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>QRS duration</span>
+        <strong>&lt; 3 small boxes</strong>
+        <small>&lt; 120 ms</small>
+      </div>
+
+      <div class="ruler-item ruler-note">
+        <span>Amplitude / QT</span>
+        <strong class="ideal-only">P ≤ 0.25 mV in limb leads</strong>
+        <strong class="clean-only">P ≤ 0.25 mV in limb leads</strong>
+        <strong class="imperfect-only">Do not apply mV thresholds to ΔADC</strong>
+        <small>QRS/T height is lead-dependent · QT varies with heart rate</small>
+      </div>
+    </section>
+
     <section class="core-workspace">
       <div class="plot-column">
         <div class="plot-card">
