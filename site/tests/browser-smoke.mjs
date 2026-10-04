@@ -24,8 +24,8 @@ try {
     assert.match(bodyClass || "", /theme-dark/);
     assert.match(bodyClass || "", /source-ideal/);
 
-    assert.equal(await page.locator("#idealGuide").isVisible(), true);
-    assert.equal(await page.locator(".controls").isVisible(), false);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "ideal");
+    assert.equal(await page.locator("#controlsDrawer").evaluate(el => el.open), false);
     assert.equal(await page.locator("#gridScale").innerText(), "Small box: 40 ms × 0.1 mV (synthetic)");
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -49,7 +49,7 @@ try {
 
     await page.screenshot({path: out + "/mobile-ideal.png", fullPage: true});
 
-    await page.locator("#cleanSource").tap();
+    await page.locator("#stageSelect").selectOption("clean");
     await page.waitForTimeout(100);
     assert.match((await page.getAttribute("body","class")) || "", /source-clean/);
     const cleanPlotLegend = await page.locator(".plot-card .legend").innerText();
@@ -57,6 +57,7 @@ try {
     const cleanBaseline = await page.locator("#baselineRealityText").innerText();
     assert.match(cleanBaseline, /cardiologist-delineated PR and TP segments/i);
 
+    await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const expertTable = await page.locator("#ludbMeasurementTable").innerText();
     assert.match(expertTable, /QRS duration/i);
     assert.match(expertTable, /QT interval/i);
@@ -82,11 +83,12 @@ try {
 
     await page.screenshot({path: out + "/mobile-clean.png", fullPage: true});
 
-    await page.locator("#realSource").tap();
+    await page.locator("#stageSelect").selectOption("real");
     await page.waitForTimeout(100);
     const realBodyClass = await page.getAttribute("body", "class");
     assert.match(realBodyClass || "", /source-real/);
 
+    await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
     assert.match(validationText, /8\/8/);
     assert.match(validationText, /Sampling rate/);
@@ -104,6 +106,7 @@ try {
     const rrText = await page.locator("#rrBridgeStats").innerText();
     assert.match(rrText, /R–R intervals/i);
 
+    await page.locator("#learningDrawer").evaluate(el => { el.open = true; });
     const firstQuizOption = page.locator(".quiz-option").first();
     await firstQuizOption.tap();
     const feedback = await page.locator("#quizFeedback").innerText();
@@ -125,15 +128,16 @@ try {
     assert.match(bodyClass || "", /mode-teaching/);
     assert.match(bodyClass || "", /theme-dark/);
     assert.match(bodyClass || "", /source-ideal/);
-    assert.equal(await page.locator(".controls").isVisible(), false);
+    assert.equal(await page.locator("#controlsDrawer").evaluate(el => el.open), false);
 
     const canvas = await page.locator("#ecgCanvas").boundingBox();
     assert.ok(canvas && canvas.width > 900);
     assert.equal(await page.locator("#nextToClean").isVisible(), true);
     await page.screenshot({path: out + "/desktop-ideal.png", fullPage: true});
 
-    await page.locator("#realSource").click();
+    await page.locator("#stageSelect").selectOption("real");
     await page.waitForTimeout(100);
+    await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
     assert.match(validationText, /8\/8/);
     assert.equal(await page.locator("#downloadValidation").isVisible(), true);
