@@ -103,6 +103,7 @@ try {
     assert.match(uncertainMeasurement, /amplitude withheld/);
     assert.match(uncertainMeasurement, /ms/);
 
+    await page.locator("details.dock-card.biological-only").evaluate(el => { el.open = true; });
     const rrText = await page.locator("#rrBridgeStats").innerText();
     assert.match(rrText, /R–R intervals/i);
 
