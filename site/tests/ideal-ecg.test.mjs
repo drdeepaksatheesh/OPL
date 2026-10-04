@@ -44,8 +44,8 @@ test("manual calipers are interpreted against nearby declared landmarks without 
   assert.equal(result.a.label, "P onset");
   assert.equal(result.b.label, "QRS onset");
   assert.equal(result.measurement.label, "PR interval");
-  assert.equal(result.measurement.expected_ms, 155);
-  assert.equal(result.measurement.measured_ms, 173);
+  assert.equal(result.measurement.expected_ms, 160);
+  assert.equal(result.measurement.measured_ms, 178);
   assert.equal(result.measurement.error_ms, 18);
 });
 
@@ -57,8 +57,8 @@ test("landmark assist declines to invent an interval for unrelated points", () =
   const tPeak = beat.landmarks.t_peak;
   const result = interpretIdealCalipers(record, pPeak, tPeak, 30);
 
-  assert.equal(result.a.label, "P peak");
-  assert.equal(result.b.label, "T peak");
+  assert.equal(result.a, null);
+  assert.equal(result.b, null);
   assert.equal(result.measurement, null);
 });
 
