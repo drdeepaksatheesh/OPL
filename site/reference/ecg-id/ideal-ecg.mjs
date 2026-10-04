@@ -10,7 +10,7 @@ export const IDEAL_ECG_SPEC = Object.freeze({
   horizontal_small_box_ms: 40,
   vertical_small_box_mV: 0.1,
   morphology: {
-    p: {offset_s: -0.16, amplitude_mV: 0.15, sigma_s: 0.028},
+    p: {offset_s: -0.16, amplitude_mV: 0.15, sigma_s: 0.020},
     q: {offset_s: -0.030, amplitude_mV: -0.12, sigma_s: 0.010},
     r: {offset_s: 0, amplitude_mV: 1.0, sigma_s: 0.012},
     s: {offset_s: 0.030, amplitude_mV: -0.25, sigma_s: 0.012},
