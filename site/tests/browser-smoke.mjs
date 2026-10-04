@@ -135,11 +135,17 @@ try {
     assert.ok(canvas && canvas.width > 900);
     assert.equal(await page.locator("#nextToClean").isVisible(), true);
 
-    // Drag from P onset to QRS onset in the 0.1–2.1 s ideal window.
+    // Drag exactly from source-sample P onset (500) to QRS onset (580).
+    // Visible samples are 50..1049, so use source-sample geometry rather than
+    // approximate percentages of the nominal 0.1–2.1 s window.
     const dragY = canvas.y + canvas.height * 0.5;
-    await page.mouse.move(canvas.x + canvas.width * 0.45, dragY);
+    const idealStartSample = 50;
+    const idealEndSample = 1049;
+    const pOnsetFraction = (500 - idealStartSample) / (idealEndSample - idealStartSample);
+    const qrsOnsetFraction = (580 - idealStartSample) / (idealEndSample - idealStartSample);
+    await page.mouse.move(canvas.x + canvas.width * pOnsetFraction, dragY);
     await page.mouse.down();
-    await page.mouse.move(canvas.x + canvas.width * 0.53, dragY, {steps: 8});
+    await page.mouse.move(canvas.x + canvas.width * qrsOnsetFraction, dragY, {steps: 8});
     await page.mouse.up();
 
     const dragAssist = await page.locator("#measurementAssist").innerText();
