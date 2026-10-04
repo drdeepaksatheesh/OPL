@@ -199,18 +199,48 @@ export function nearestIdealLandmark(record, sample, toleranceMs = 30) {
   return best;
 }
 
+const IDEAL_INTERVAL_ENDPOINT_KEYS = Object.freeze([
+  "p_onset","p_end","qrs_onset","qrs_end","t_onset","t_end","r"
+]);
+
+function nearestIdealIntervalEndpoint(record, sample, toleranceMs = 30) {
+  if (!record || !Number.isInteger(sample)) return null;
+  const fs = Number(record.sampling_rate_hz);
+  const toleranceSamples = Math.round((Number(toleranceMs) / 1000) * fs);
+  let best = null;
+
+  for (const beat of record.beats || []) {
+    for (const key of IDEAL_INTERVAL_ENDPOINT_KEYS) {
+      const landmarkSample = beat.landmarks?.[key];
+      if (!Number.isInteger(landmarkSample)) continue;
+      const distance = sample - landmarkSample;
+      const absDistance = Math.abs(distance);
+      if (absDistance > toleranceSamples) continue;
+      if (!best || absDistance < best.abs_distance_samples) {
+        best = {
+          key,
+          label: IDEAL_LANDMARK_LABELS[key] || key,
+          sample: landmarkSample,
+          beat_index: beat.index,
+          distance_samples: distance,
+          distance_ms: distance / fs * 1000,
+          abs_distance_samples: absDistance
+        };
+      }
+    }
+  }
+  return best;
+}
+
 export function interpretIdealCalipers(record, sampleA, sampleB, toleranceMs = 30) {
   if (!record || !Number.isInteger(sampleA) || !Number.isInteger(sampleB)) {
     return {a:null,b:null,measurement:null};
   }
 
-  let a = nearestIdealLandmark(record, sampleA, toleranceMs);
-  let b = nearestIdealLandmark(record, sampleB, toleranceMs);
+  if (sampleA > sampleB) [sampleA,sampleB] = [sampleB,sampleA];
 
-  if (sampleA > sampleB) {
-    [a,b] = [b,a];
-    [sampleA,sampleB] = [sampleB,sampleA];
-  }
+  const a = nearestIdealIntervalEndpoint(record, sampleA, toleranceMs);
+  const b = nearestIdealIntervalEndpoint(record, sampleB, toleranceMs);
 
   let measurement = null;
   if (a && b) {
