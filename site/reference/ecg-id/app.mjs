@@ -10,7 +10,13 @@ import {
 } from "../../reference-lab-core.mjs";
 import {saveRecord, getRecord} from "../../offline-store.mjs";
 import {validateReferenceIntegrity, makeValidationReport} from "../../reference-validation.mjs";
-import {generateIdealEcg, IDEAL_ECG_SPEC, nearestIdealLandmark, interpretIdealCalipers} from "./ideal-ecg.mjs";
+import {
+  generateIdealEcg,
+  IDEAL_ECG_SPEC,
+  nearestIdealLandmark,
+  nearestIdealIntervalEndpoint,
+  interpretIdealCalipers
+} from "./ideal-ecg.mjs";
 import {
   interpretLudbCalipers,
   summarizeLudbReferenceIntervals,
@@ -611,7 +617,9 @@ function renderMeasurements() {
 }
 
 function idealCursorText(sample, value) {
-  const landmark = nearestIdealLandmark(state.record, sample, 30);
+  const landmark =
+    nearestIdealIntervalEndpoint(state.record, sample, 30) ||
+    nearestIdealLandmark(state.record, sample, 30);
   const delta = value - IDEAL_ECG_SPEC.baseline_mV;
   if (!landmark) {
     return roundNumber(sampleToMs(sample, state.record.sampling_rate_hz), 2) +
