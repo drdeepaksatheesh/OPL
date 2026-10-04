@@ -23,6 +23,10 @@ import {
   makeLudbReferenceMeasurementReport
 } from "./ludb-calipers.mjs";
 import {ECG_TEACHING_QUESTIONS, evaluateAnswer, scoreQuiz} from "./teaching.mjs";
+import {
+  ECG_PAPER_TIME_SMALL_BOX_S,
+  computeSquarePaperRange
+} from "./ecg-paper.mjs";
 
 const IMPERFECT_RECORD_URL = "./data/Person_01_rec_1.json";
 const CLEAN_RECORD_URL = "./data/LUDB_clean_LeadII.json";
@@ -72,6 +76,19 @@ const el = Object.fromEntries([
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
+
+const caliperPointer = {
+  active: false,
+  pointerId: null,
+  mode: "range",
+  endpoint: null,
+  startSample: null,
+  startClientX: 0,
+  moved: false,
+  original: {a:null,b:null}
+};
+const CALIPER_DRAG_THRESHOLD_PX = 5;
+const CALIPER_HIT_RADIUS_PX = 12;
 
 boot();
 
@@ -232,18 +249,61 @@ function bindEvents() {
     draw();
   });
 
-  el.ecgCanvas.addEventListener("click", event => {
+  el.ecgCanvas.addEventListener("pointerdown", event => {
     if (!state.record) return;
-    const rect = el.ecgCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const [start,end] = visibleSampleRange();
-    const fraction = Math.max(0, Math.min(1, x / rect.width));
-    const sample = Math.min(end - 1, Math.max(start, Math.round(start + fraction * (end - start - 1))));
-    state.calipers[state.nextCaliper] = sample;
-    state.nextCaliper = state.nextCaliper === "a" ? "b" : "a";
-    persistSession();
+    event.preventDefault();
+
+    const sample = sampleFromPointerEvent(event);
+    const endpoint = caliperEndpointNearPointer(event);
+
+    caliperPointer.active = true;
+    caliperPointer.pointerId = event.pointerId;
+    caliperPointer.mode = endpoint ? "endpoint" : "range";
+    caliperPointer.endpoint = endpoint;
+    caliperPointer.startSample = sample;
+    caliperPointer.startClientX = event.clientX;
+    caliperPointer.moved = false;
+    caliperPointer.original = {...state.calipers};
+
+    try { el.ecgCanvas.setPointerCapture(event.pointerId); } catch {}
+
+    if (endpoint) {
+      state.calipers[endpoint] = sample;
+      renderMeasurements();
+      draw();
+    }
+  });
+
+  el.ecgCanvas.addEventListener("pointermove", event => {
+    if (!state.record) return;
+
+    if (!caliperPointer.active || event.pointerId !== caliperPointer.pointerId) {
+      updateCaliperHoverCursor(event);
+      return;
+    }
+
+    event.preventDefault();
+    const sample = sampleFromPointerEvent(event);
+    if (Math.abs(event.clientX - caliperPointer.startClientX) >= CALIPER_DRAG_THRESHOLD_PX) {
+      caliperPointer.moved = true;
+    }
+
+    if (caliperPointer.mode === "endpoint") {
+      state.calipers[caliperPointer.endpoint] = sample;
+    } else if (caliperPointer.moved) {
+      const a = Math.min(caliperPointer.startSample, sample);
+      const b = Math.max(caliperPointer.startSample, sample);
+      state.calipers = {a,b};
+    }
+
     renderMeasurements();
     draw();
+  });
+
+  el.ecgCanvas.addEventListener("pointerup", event => finishCaliperPointer(event, false));
+  el.ecgCanvas.addEventListener("pointercancel", event => finishCaliperPointer(event, true));
+  el.ecgCanvas.addEventListener("pointerleave", event => {
+    if (!caliperPointer.active) updateCaliperHoverCursor(event, true);
   });
 
   el.saveOffline.addEventListener("click", async () => {
@@ -342,6 +402,94 @@ function bindEvents() {
 
   window.addEventListener("online", () => { el.onlineState.textContent = "Online"; });
   window.addEventListener("offline", () => { el.onlineState.textContent = "Offline"; });
+}
+
+function sampleFromPointerEvent(event) {
+  const rect = el.ecgCanvas.getBoundingClientRect();
+  const [start,end] = visibleSampleRange();
+  const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+  const fraction = rect.width > 0 ? x / rect.width : 0;
+  return Math.min(
+    end - 1,
+    Math.max(start, Math.round(start + fraction * (end - start - 1)))
+  );
+}
+
+function caliperEndpointNearPointer(event) {
+  const rect = el.ecgCanvas.getBoundingClientRect();
+  const [start,end] = visibleSampleRange();
+  const pointerX = event.clientX - rect.left;
+  let best = null;
+
+  for (const endpoint of ["a","b"]) {
+    const sample = state.calipers[endpoint];
+    if (!Number.isInteger(sample) || sample < start || sample >= end) continue;
+    const x = (sample - start) / Math.max(1,end - start - 1) * rect.width;
+    const distance = Math.abs(pointerX - x);
+    if (distance <= CALIPER_HIT_RADIUS_PX && (!best || distance < best.distance)) {
+      best = {endpoint,distance};
+    }
+  }
+  return best?.endpoint || null;
+}
+
+function normalizeCalipers() {
+  const {a,b} = state.calipers;
+  if (Number.isInteger(a) && Number.isInteger(b) && a > b) {
+    state.calipers = {a:b,b:a};
+  }
+}
+
+function finishCaliperPointer(event, cancelled) {
+  if (!caliperPointer.active || event.pointerId !== caliperPointer.pointerId) return;
+  event.preventDefault();
+
+  if (cancelled) {
+    state.calipers = {...caliperPointer.original};
+  } else {
+    const sample = sampleFromPointerEvent(event);
+
+    if (caliperPointer.mode === "endpoint") {
+      state.calipers[caliperPointer.endpoint] = sample;
+      normalizeCalipers();
+      state.nextCaliper = "a";
+    } else if (caliperPointer.moved) {
+      state.calipers = {
+        a: Math.min(caliperPointer.startSample, sample),
+        b: Math.max(caliperPointer.startSample, sample)
+      };
+      state.nextCaliper = "a";
+    } else {
+      const endpoint = state.nextCaliper;
+      state.calipers[endpoint] = sample;
+      if (endpoint === "a") {
+        state.nextCaliper = "b";
+      } else {
+        normalizeCalipers();
+        state.nextCaliper = "a";
+      }
+    }
+  }
+
+  try { el.ecgCanvas.releasePointerCapture(event.pointerId); } catch {}
+  caliperPointer.active = false;
+  caliperPointer.pointerId = null;
+  caliperPointer.endpoint = null;
+  caliperPointer.startSample = null;
+  caliperPointer.moved = false;
+
+  persistSession();
+  renderMeasurements();
+  draw();
+  updateCaliperHoverCursor(event);
+}
+
+function updateCaliperHoverCursor(event, leaving=false) {
+  if (leaving) {
+    el.ecgCanvas.style.cursor = "crosshair";
+    return;
+  }
+  el.ecgCanvas.style.cursor = caliperEndpointNearPointer(event) ? "ew-resize" : "crosshair";
 }
 
 function switchSource(mode, {restore=false, session=null} = {}) {
