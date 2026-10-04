@@ -11,31 +11,31 @@ export const IDEAL_ECG_SPEC = Object.freeze({
   vertical_small_box_mV: 0.1,
   morphology: {
     p: {offset_s: -0.16, amplitude_mV: 0.15, sigma_s: 0.028},
-    q: {offset_s: -0.035, amplitude_mV: -0.12, sigma_s: 0.010},
+    q: {offset_s: -0.030, amplitude_mV: -0.12, sigma_s: 0.010},
     r: {offset_s: 0, amplitude_mV: 1.0, sigma_s: 0.012},
-    s: {offset_s: 0.035, amplitude_mV: -0.25, sigma_s: 0.012},
-    t: {offset_s: 0.25, amplitude_mV: 0.30, sigma_s: 0.055}
+    s: {offset_s: 0.030, amplitude_mV: -0.25, sigma_s: 0.012},
+    t: {offset_s: 0.280, amplitude_mV: 0.30, sigma_s: 0.055}
   },
   fiducials: {
     p_onset_s: -0.20,
     p_peak_s: -0.16,
     p_end_s: -0.12,
-    qrs_onset_s: -0.045,
-    q_s: -0.035,
+    qrs_onset_s: -0.040,
+    q_s: -0.030,
     r_s: 0,
-    s_s: 0.035,
-    qrs_end_s: 0.045,
-    t_onset_s: 0.18,
-    t_peak_s: 0.25,
-    t_end_s: 0.34
+    s_s: 0.030,
+    qrs_end_s: 0.050,
+    t_onset_s: 0.200,
+    t_peak_s: 0.280,
+    t_end_s: 0.360
   },
   teaching_measurements: {
     p_wave_duration_ms: 80,
-    pr_interval_ms: 155,
-    pr_segment_ms: 75,
+    pr_interval_ms: 160,
+    pr_segment_ms: 80,
     qrs_duration_ms: 90,
-    st_segment_ms: 135,
-    qt_interval_ms: 385,
+    st_segment_ms: 150,
+    qt_interval_ms: 400,
     t_wave_duration_ms: 160,
     rr_interval_ms: 800
   }
