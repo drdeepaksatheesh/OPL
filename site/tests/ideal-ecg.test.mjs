@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateIdealEcg, IDEAL_ECG_SPEC, nearestIdealLandmark, interpretIdealCalipers} from "../reference/ecg-id/ideal-ecg.mjs";
+import {
+  generateIdealEcg,
+  IDEAL_ECG_SPEC,
+  nearestIdealLandmark,
+  nearestIdealIntervalEndpoint,
+  interpretIdealCalipers
+} from "../reference/ecg-id/ideal-ecg.mjs";
 
 test("ideal ECG template is deterministic and uses declared sampling", () => {
   const a = generateIdealEcg();
@@ -70,4 +76,13 @@ test("nearest landmark reports placement error in milliseconds", () => {
 
   assert.equal(hit.label, "R");
   assert.equal(hit.distance_ms, 12);
+});
+
+
+test("interval endpoint lookup prefers QRS onset over nearby Q peak for caliper teaching", () => {
+  const record = generateIdealEcg();
+  const beat = record.beats[1];
+  const sample = beat.landmarks.qrs_onset + 2;
+  const hit = nearestIdealIntervalEndpoint(record, sample, 30);
+  assert.equal(hit.label, "QRS onset");
 });
