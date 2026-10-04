@@ -1,3 +1,8 @@
+param(
+    [int]$StartPort = 8765,
+    [switch]$NoBrowser
+)
+
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $LogPath = Join-Path $Root 'OPL_STARTUP_LOG.txt'
@@ -39,7 +44,10 @@ try {
     Write-Host ('Startup log: ' + $LogPath) -ForegroundColor DarkGray
     Write-Host ''
 
-    & $ServerPath 2>&1 | Tee-Object -FilePath $LogPath -Append
+    $serverArgs = @{ StartPort = $StartPort }
+    if ($NoBrowser) { $serverArgs.NoBrowser = $true }
+
+    & $ServerPath @serverArgs 2>&1 | Tee-Object -FilePath $LogPath -Append
 }
 catch {
     $details = $_ | Out-String
