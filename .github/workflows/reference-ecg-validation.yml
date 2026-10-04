@@ -35,6 +35,7 @@ jobs:
         run: |
           python -m py_compile validation/reference_ecg/prepare_physionet_reference.py
           python -m py_compile validation/reference_ecg/validate_ptbxl_roundtrip.py
+          python -m py_compile validation/reference_ecg/validate_mitbih_rpeaks.py
 
       - name: Run ECG scale-invariance regression
         run: |
@@ -49,5 +50,17 @@ jobs:
         with:
           name: opl-ptbxl-roundtrip-validation
           path: build/reference-validation/ptbxl_roundtrip_report.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Run MIT-BIH frozen sentinel R-peak benchmark
+        run: |
+          python validation/reference_ecg/validate_mitbih_rpeaks.py --record-count 8
+
+      - name: Upload MIT-BIH R-peak benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-mitbih-rpeak-validation
+          path: build/reference-validation/mitbih_rpeak_report.json
           if-no-files-found: error
           retention-days: 90
