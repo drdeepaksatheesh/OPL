@@ -416,6 +416,12 @@ function sampleFromPointerEvent(event) {
 }
 
 function caliperEndpointNearPointer(event) {
+  // Do not let a lone A caliper steal the second tap on short intervals.
+  // Endpoint dragging becomes available once a complete A/B pair exists.
+  if (!Number.isInteger(state.calipers.a) || !Number.isInteger(state.calipers.b)) {
+    return null;
+  }
+
   const rect = el.ecgCanvas.getBoundingClientRect();
   const [start,end] = visibleSampleRange();
   const pointerX = event.clientX - rect.left;
