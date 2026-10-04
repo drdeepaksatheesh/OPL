@@ -795,7 +795,7 @@ body.mode-teaching #evidenceDrawer:not([open]) .drawer-body{display:none}
 /* Shared ECG ruler: keeps model, clean biology and imperfect biology on one teaching frame. */
 .ecg-ruler-strip{
   display:grid;
-  grid-template-columns:minmax(170px,1.2fr) repeat(5,minmax(125px,1fr));
+  grid-template-columns:minmax(170px,1.25fr) repeat(6,minmax(112px,1fr));
   gap:7px;
   margin:0 0 12px;
   padding:8px;
