@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - publication-series
+    paths:
+      - "software/OpenPhysiologyLab/analysis/**"
+      - "validation/reference_ecg/**"
+      - ".github/workflows/reference-ecg-validation.yml"
   pull_request:
     paths:
       - "software/OpenPhysiologyLab/analysis/**"
