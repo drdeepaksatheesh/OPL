@@ -26,7 +26,7 @@ try {
 
     assert.equal(await page.locator("#stageSelect").inputValue(), "ideal");
     assert.equal(await page.locator("#controlsDrawer").evaluate(el => el.open), false);
-    assert.equal(await page.locator("#gridScale").innerText(), "Small box: 40 ms × 0.1 mV (synthetic)");
+    assert.equal(await page.locator("#gridScale").innerText(), "ECG paper: square boxes · 40 ms × 0.1 mV (synthetic)");
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -134,6 +134,20 @@ try {
     const canvas = await page.locator("#ecgCanvas").boundingBox();
     assert.ok(canvas && canvas.width > 900);
     assert.equal(await page.locator("#nextToClean").isVisible(), true);
+
+    // Drag from P onset to QRS onset in the 0.1–2.1 s ideal window.
+    const dragY = canvas.y + canvas.height * 0.5;
+    await page.mouse.move(canvas.x + canvas.width * 0.45, dragY);
+    await page.mouse.down();
+    await page.mouse.move(canvas.x + canvas.width * 0.53, dragY, {steps: 8});
+    await page.mouse.up();
+
+    const dragAssist = await page.locator("#measurementAssist").innerText();
+    assert.match(dragAssist, /PR interval/);
+    assert.match(dragAssist, /model 160/);
+    const dragMeasurement = await page.locator("#measurementGrid").innerText();
+    assert.match(dragMeasurement, /160 ms/);
+
     await page.screenshot({path: out + "/desktop-ideal.png", fullPage: true});
 
     await page.locator("#stageSelect").selectOption("real");
