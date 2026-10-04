@@ -86,3 +86,11 @@ test("interval endpoint lookup prefers QRS onset over nearby Q peak for caliper 
   const hit = nearestIdealIntervalEndpoint(record, sample, 30);
   assert.equal(hit.label, "QRS onset");
 });
+
+
+test("declared P-wave onset and end are visually near the isoelectric baseline", () => {
+  const record = generateIdealEcg();
+  const beat = record.beats[1];
+  assert.ok(Math.abs(record.signals.raw[beat.landmarks.p_onset]) < 0.025);
+  assert.ok(Math.abs(record.signals.raw[beat.landmarks.p_end]) < 0.025);
+});
