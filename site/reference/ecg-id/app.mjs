@@ -30,7 +30,9 @@ import {
 
 const IMPERFECT_RECORD_URL = "./data/Person_01_rec_1.json";
 const CLEAN_RECORD_URL = "./data/LUDB_clean_LeadII.json";
+const PRACTICE_MANIFEST_URL = "./practice/practice_manifest.json";
 const REAL_RECORD_ID = "ECG-ID/Person_01/rec_1";
+const REAL_MV_RECORD_ID = "ECG-ID/Person_01/rec_1-derived-mV";
 const CLEAN_RECORD_ID_PREFIX = "LUDB/";
 const SESSION_KEY_BASE = "opl:ecg-reference:session:";
 const MODE_KEY = "opl:ecg-reference:mode";
@@ -40,8 +42,16 @@ const QUIZ_KEY = "opl:ecg-reference:quiz";
 const state = {
   record: null,
   realRecord: null,
+  realMvRecord: null,
   cleanRecord: null,
   idealRecord: generateIdealEcg(),
+  practiceManifest: null,
+  practiceRecords: new Map(),
+  practiceRecord: null,
+  practiceRecordId: null,
+  practiceReveal: false,
+  practiceTask: "pr_interval",
+  storyReturnMode: "adc",
   sourceManifest: null,
   buildInfo: null,
   sourceMode: "ideal",
@@ -54,7 +64,7 @@ const state = {
   windowSeconds: 2,
   windowStartSeconds: 0.1,
   showAnnotations: true,
-  verticalGridAdc: 50,
+  verticalGridAdc: 20,
   interfaceMode: "advanced",
   theme: "dark",
   quizIndex: 0,
@@ -73,7 +83,8 @@ const el = Object.fromEntries([
   "quizScore","quizTotal","quizQuestion","quizOptions","quizFeedback","quizNext","quizReset",
   "validationPassed","validationTotal","validationChecks","downloadValidation",
   "rrBridgeStats","cleanBaselineDetails","cleanSelectionSummary","measurementAssist",
-  "ludbMeasurementTable","downloadLudbMeasurements"
+  "ludbMeasurementTable","downloadLudbMeasurements","nextToAdc","backToReal","baselineInputLabel",
+  "practiceJump","practiceRecordList","practiceTask","practiceReveal","practiceNewAttempt","practiceStatus","practiceReview","exitPractice"
 ].map(id => [id, document.getElementById(id)]));
 
 const ctx = el.ecgCanvas.getContext("2d");
@@ -125,16 +136,44 @@ async function boot() {
   } catch {
     state.realRecord = await getRecord(REAL_RECORD_ID).catch(() => null);
   }
+  state.realMvRecord = state.realRecord ? convertRecordToPhysicalMv(state.realRecord) : null;
+
+  try {
+    state.practiceManifest = await fetch(PRACTICE_MANIFEST_URL, {cache:"no-cache"}).then(requireOk).then(r => r.json());
+    const loaded = await Promise.all((state.practiceManifest.records || []).map(async item => {
+      const record = await fetch("./practice/" + item.file, {cache:"no-cache"}).then(requireOk).then(r => r.json());
+      validateReferenceRecord(record);
+      return [item.id, record];
+    }));
+    state.practiceRecords = new Map(loaded);
+    const first = state.practiceManifest.records?.[0];
+    if (first) {
+      state.practiceRecordId = first.id;
+      state.practiceRecord = state.practiceRecords.get(first.id) || null;
+    }
+  } catch {
+    state.practiceManifest = null;
+    state.practiceRecords = new Map();
+    state.practiceRecord = null;
+  }
 
   if (el.stageSelect) {
     const cleanOption = el.stageSelect.querySelector('option[value="clean"]');
     const realOption = el.stageSelect.querySelector('option[value="real"]');
+    const adcOption = el.stageSelect.querySelector('option[value="adc"]');
+    const practiceOption = el.stageSelect.querySelector('option[value="practice"]');
     if (cleanOption) cleanOption.disabled = !state.cleanRecord;
-    if (realOption) realOption.disabled = !state.realRecord;
+    if (realOption) realOption.disabled = !state.realMvRecord;
+    if (adcOption) adcOption.disabled = !state.realRecord;
+    if (practiceOption) practiceOption.disabled = !state.practiceRecord;
   }
   if (el.nextToClean) el.nextToClean.disabled = !state.cleanRecord;
-  if (el.nextToImperfect) el.nextToImperfect.disabled = !state.realRecord;
+  if (el.nextToImperfect) el.nextToImperfect.disabled = !state.realMvRecord;
+  if (el.nextToAdc) el.nextToAdc.disabled = !state.realRecord;
   if (el.backToClean) el.backToClean.disabled = !state.cleanRecord;
+  if (el.backToReal) el.backToReal.disabled = !state.realMvRecord;
+  if (el.practiceJump) el.practiceJump.disabled = !state.practiceRecord;
+  renderPracticePicker();
   el.onlineState.textContent = state.cleanRecord && state.realRecord
     ? (navigator.onLine ? "Reference data ready" : "Offline reference data")
     : "Some reference data unavailable";
@@ -154,11 +193,22 @@ function bindEvents() {
       el.stageSelect.value = state.sourceMode;
       return;
     }
-    if (next === "real" && !state.realRecord) {
-      showStatus("The ECG-ID reference is unavailable in this build/offline cache.", true);
+    if (next === "real" && !state.realMvRecord) {
+      showStatus("The imperfect ECG mV reference is unavailable in this build/offline cache.", true);
       el.stageSelect.value = state.sourceMode;
       return;
     }
+    if (next === "adc" && !state.realRecord) {
+      showStatus("The ECG-ID machine-view reference is unavailable in this build/offline cache.", true);
+      el.stageSelect.value = state.sourceMode;
+      return;
+    }
+    if (next === "practice" && !state.practiceRecord) {
+      showStatus("The bundled LUDB practice bank is unavailable in this build.", true);
+      el.stageSelect.value = state.sourceMode;
+      return;
+    }
+    if (next === "practice") state.storyReturnMode = state.sourceMode === "practice" ? state.storyReturnMode : state.sourceMode;
     switchSource(next, {restore:true});
   });
 
@@ -171,17 +221,57 @@ function bindEvents() {
     scrollToLab();
   });
   el.nextToImperfect?.addEventListener("click", () => {
-    if (!state.realRecord) {
-      showStatus("The ECG-ID reference is unavailable in this build.", true);
+    if (!state.realMvRecord) {
+      showStatus("The imperfect ECG mV reference is unavailable in this build.", true);
       return;
     }
     switchSource("real", {restore:true});
+    scrollToLab();
+  });
+  el.nextToAdc?.addEventListener("click", () => {
+    if (!state.realRecord) {
+      showStatus("The ECG-ID machine-view reference is unavailable in this build.", true);
+      return;
+    }
+    switchSource("adc", {restore:true});
     scrollToLab();
   });
   el.backToClean?.addEventListener("click", () => {
     switchSource("clean", {restore:true});
     scrollToLab();
   });
+  el.backToReal?.addEventListener("click", () => {
+    switchSource("real", {restore:true});
+    scrollToLab();
+  });
+  el.practiceJump?.addEventListener("click", () => {
+    if (!state.practiceRecord) return;
+    if (state.sourceMode !== "practice") state.storyReturnMode = state.sourceMode;
+    switchSource("practice", {restore:true});
+    scrollToLab();
+  });
+  el.exitPractice?.addEventListener("click", () => {
+    switchSource(state.storyReturnMode || "adc", {restore:true});
+    scrollToLab();
+  });
+  el.practiceTask?.addEventListener("change", () => {
+    state.practiceTask = el.practiceTask.value;
+    state.practiceReveal = false;
+    renderPracticeReview();
+    renderMeasurementAssist();
+    draw();
+  });
+  el.practiceReveal?.addEventListener("click", () => {
+    state.practiceReveal = !state.practiceReveal;
+    state.showAnnotations = state.practiceReveal;
+    syncControlsFromState();
+    renderProvenance();
+    renderPracticeReview();
+    renderMeasurementAssist();
+    renderBaselineReality();
+    draw();
+  });
+  el.practiceNewAttempt?.addEventListener("click", () => resetPracticeAttempt());
 
   document.querySelectorAll("[data-drawer-target]").forEach(button => {
     button.addEventListener("click", () => {
@@ -194,7 +284,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-quick-waveform]").forEach(button => {
     button.addEventListener("click", () => {
-      if (state.sourceMode !== "real") return;
+      if (!(state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice")) return;
       state.mode = button.dataset.quickWaveform;
       el.waveformMode.value = state.mode;
       syncQuickWaveformButtons();
@@ -240,15 +330,17 @@ function bindEvents() {
   });
 
   el.baselineInput.addEventListener("change", () => {
-    if (state.sourceMode === "real") setBaseline(Number(el.baselineInput.value), "selected");
+    if (state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice") setBaseline(Number(el.baselineInput.value), "selected");
   });
   el.baselineZero.addEventListener("click", () => {
-    if (state.sourceMode !== "real") return;
-    setBaseline(Number(state.record?.adc?.zero?.[signalIndex()] ?? 0), "selected");
+    if (!(state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice")) return;
+    const zero = Number(state.record?.adc?.zero?.[signalIndex()] ?? 0);
+    const gain = derivedCountsPerMv(state.record) || 1;
+    setBaseline(state.sourceMode === "real" ? zero / gain : zero, "selected");
   });
   el.baselineMedian.addEventListener("click", useVisibleMedianBaseline);
   el.baselineFromA.addEventListener("click", () => {
-    if (state.sourceMode !== "real" || state.calipers.a == null) return;
+    if (!((state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice") && state.calipers.a != null)) return;
     setBaseline(activeSignal()[state.calipers.a], "selected");
   });
   el.baselineConfident.addEventListener("click", () => setBaselineStatus("selected"));
@@ -328,7 +420,9 @@ function bindEvents() {
     persistSession();
     showStatus(state.sourceMode === "clean"
       ? "Saved the clean LUDB reference locally in this browser."
-      : "Saved the ECG-ID reference locally in this browser.");
+      : state.sourceMode === "practice"
+        ? "Saved this LUDB practice ECG locally in this browser."
+        : "Saved the ECG-ID reference locally in this browser.");
   });
 
   el.downloadLudbMeasurements?.addEventListener("click", () => {
@@ -343,7 +437,7 @@ function bindEvents() {
   });
 
   el.downloadValidation.addEventListener("click", () => {
-    if (state.sourceMode !== "real" || !state.realRecord) return;
+    if (!((state.sourceMode === "real" || state.sourceMode === "adc") && state.realRecord)) return;
     const report = makeValidationReport({
       record: state.realRecord,
       oplVersion: window.OPL_CONFIG?.version,
@@ -364,11 +458,17 @@ function bindEvents() {
     });
     pkg.session.baseline_status = state.baselineStatus;
     pkg.session.source_mode = state.sourceMode;
+    pkg.session.practice_task = state.practiceTask;
+    pkg.session.practice_record_id = state.practiceRecordId;
     const name = state.sourceMode === "ideal"
       ? "OPL_Ideal_ECG_teaching-package.json"
       : state.sourceMode === "clean"
         ? "OPL_LUDB_clean_LeadII_reference-package.json"
-        : "OPL_ECG-ID_Person_01_rec_1_reference-package.json";
+        : state.sourceMode === "real"
+          ? "OPL_ECG-ID_Person_01_rec_1_physical_mV_reference-package.json"
+          : state.sourceMode === "practice"
+            ? "OPL_" + (practiceManifestItem()?.label || "Practice_ECG").replaceAll(" ","_") + "_attempt.json"
+            : "OPL_ECG-ID_Person_01_rec_1_ADC_reference-package.json";
     downloadJson(name, pkg);
     showStatus("Downloaded the current OPL package with waveform, provenance, baseline state and calipers.");
   });
@@ -381,16 +481,27 @@ function bindEvents() {
       const imported = importExportPackage(value);
       const importedId = String(imported.record?.record_id || "");
       const isIdeal = Boolean(imported.record?.provenance?.teaching_only) || importedId.startsWith("OPL-IDEAL/");
+      const isPractice = imported.session?.source_mode === "practice";
       const isClean = importedId.startsWith(CLEAN_RECORD_ID_PREFIX);
       if (isIdeal) {
         state.idealRecord = imported.record;
         switchSource("ideal", {session:imported.session});
+      } else if (isPractice) {
+        state.practiceRecord = imported.record;
+        state.practiceRecordId = imported.session?.practice_record_id || importedId;
+        state.practiceRecords.set(state.practiceRecordId, imported.record);
+        state.practiceTask = imported.session?.practice_task || "free";
+        switchSource("practice", {session:imported.session});
       } else if (isClean) {
         state.cleanRecord = imported.record;
         switchSource("clean", {session:imported.session});
+      } else if (importedId === REAL_MV_RECORD_ID) {
+        state.realMvRecord = imported.record;
+        switchSource("real", {session:imported.session});
       } else {
         state.realRecord = imported.record;
-        switchSource("real", {session:imported.session});
+        state.realMvRecord = convertRecordToPhysicalMv(imported.record);
+        switchSource(imported.session?.source_mode === "adc" ? "adc" : "real", {session:imported.session});
       }
       showStatus("Opened the saved OPL package.");
     } catch (error) {
@@ -512,8 +623,16 @@ function updateCaliperHoverCursor(event, leaving=false) {
 }
 
 function switchSource(mode, {restore=false, session=null} = {}) {
-  const next = mode === "clean" ? "clean" : mode === "real" ? "real" : "ideal";
-  const record = next === "clean" ? state.cleanRecord : next === "real" ? state.realRecord : state.idealRecord;
+  const next = mode === "clean" ? "clean" : mode === "real" ? "real" : mode === "adc" ? "adc" : mode === "practice" ? "practice" : "ideal";
+  const record = next === "clean"
+    ? state.cleanRecord
+    : next === "real"
+      ? state.realMvRecord
+      : next === "adc"
+        ? state.realRecord
+        : next === "practice"
+          ? state.practiceRecord
+          : state.idealRecord;
   if (!record) return;
 
   validateReferenceRecord(record);
@@ -522,6 +641,8 @@ function switchSource(mode, {restore=false, session=null} = {}) {
   document.body.classList.toggle("source-ideal", next === "ideal");
   document.body.classList.toggle("source-clean", next === "clean");
   document.body.classList.toggle("source-real", next === "real");
+  document.body.classList.toggle("source-machine", next === "adc");
+  document.body.classList.toggle("source-practice", next === "practice");
   if (el.stageSelect) el.stageSelect.value = next;
 
   const restored = session || (restore ? restoreSession(next) : null);
@@ -539,22 +660,45 @@ function switchSource(mode, {restore=false, session=null} = {}) {
     state.windowSeconds = 2;
     state.windowStartSeconds = 0.1;
     state.showAnnotations = true;
+    state.verticalGridAdc = 20;
   } else if (next === "clean") {
-    state.baseline = Number(restored?.baseline_adc ?? record.recommended_baseline_mV ?? 0);
+    state.baseline = Number(restored?.baseline_value ?? record.recommended_baseline_mV ?? 0);
     state.baselineStatus = "reference";
     state.mode = "raw";
     state.measurementSignal = "raw";
     state.windowSeconds = 2;
     state.windowStartSeconds = 0;
     state.showAnnotations = true;
-  } else {
-    state.baseline = Number(restored?.baseline_adc ?? record.adc?.zero?.[0] ?? 0);
+    state.verticalGridAdc = 20;
+  } else if (next === "real") {
+    state.baseline = Number(restored?.baseline_value ?? record.recommended_baseline_mV ?? 0);
     state.baselineStatus = restored?.baseline_status === "uncertain" ? "uncertain" : "selected";
     state.mode = "overlay";
-    state.measurementSignal = "raw";
+    state.measurementSignal = restored?.measurement_signal || "raw";
     state.windowSeconds = 2;
-    state.windowStartSeconds = 0;
+    state.windowStartSeconds = Number(restored?.window_start_seconds ?? 0);
     state.showAnnotations = true;
+    state.verticalGridAdc = 20;
+  } else if (next === "adc") {
+    state.baseline = Number(restored?.baseline_value ?? record.adc?.zero?.[0] ?? 0);
+    state.baselineStatus = restored?.baseline_status === "uncertain" ? "uncertain" : "selected";
+    state.mode = restored?.display_mode || "overlay";
+    state.measurementSignal = restored?.measurement_signal || "raw";
+    state.windowSeconds = 2;
+    state.windowStartSeconds = Number(restored?.window_start_seconds ?? 0);
+    state.showAnnotations = true;
+    state.verticalGridAdc = Number(restored?.vertical_grid_adc ?? 20);
+  } else {
+    state.baseline = Number(restored?.baseline_value ?? 0);
+    state.baselineStatus = ["selected","uncertain"].includes(restored?.baseline_status) ? restored.baseline_status : "unselected";
+    state.mode = "raw";
+    state.measurementSignal = "raw";
+    state.windowSeconds = Number(restored?.window_seconds ?? 2);
+    state.windowStartSeconds = Number(restored?.window_start_seconds ?? 0);
+    state.showAnnotations = false;
+    state.practiceReveal = false;
+    state.practiceTask = restored?.practice_task || state.practiceTask || "pr_interval";
+    state.verticalGridAdc = 20;
   }
 
   syncControlsFromState();
@@ -572,6 +716,8 @@ function renderAll() {
   renderLudbReferenceTable();
   renderRrBridge();
   renderValidation();
+  renderPracticePicker();
+  renderPracticeReview();
   syncQuickWaveformButtons();
   updateGridLabel();
   updateRuler();
@@ -585,14 +731,25 @@ function syncControlsFromState() {
   el.verticalGrid.value = String(state.verticalGridAdc);
   el.windowLength.value = String(state.windowSeconds);
   el.showAnnotations.checked = state.showAnnotations;
+  el.showAnnotations.disabled = state.sourceMode === "practice" && !state.practiceReveal;
   el.baselineInput.value = String(roundNumber(state.baseline, 4));
   el.saveOffline.disabled = state.sourceMode === "ideal";
-  el.downloadValidation.disabled = state.sourceMode !== "real";
+  el.downloadValidation.disabled = !(state.sourceMode === "real" || state.sourceMode === "adc");
+  if (el.practiceTask) el.practiceTask.value = state.practiceTask;
+  if (el.baselineInputLabel) {
+    el.baselineInputLabel.textContent = state.sourceMode === "adc"
+      ? "Selected baseline (ADC)"
+      : "Selected baseline (mV)";
+  }
+  el.baselineInput.step = state.sourceMode === "adc" ? "1" : "0.001";
   el.baselineHeading.textContent = state.sourceMode === "ideal"
     ? "Known baseline"
     : state.sourceMode === "clean"
       ? "Annotated isoelectric reference"
-      : "Choose a local reference";
+      : state.sourceMode === "practice"
+        ? "Your baseline"
+        : "Choose a local reference";
+  if (el.baselineZero) el.baselineZero.textContent = state.sourceMode === "adc" ? "ADC zero" : "0 mV";
 }
 
 function initInterfaceMode() {
@@ -650,7 +807,7 @@ function syncQuickWaveformButtons() {
 
 function renderProvenance() {
   const p = state.record?.provenance || {};
-  const m = state.sourceMode === "real" ? (state.sourceManifest || {}) : {};
+  const m = (state.sourceMode === "real" || state.sourceMode === "adc") ? (state.sourceManifest || {}) : {};
 
   let values;
   let summary;
@@ -685,8 +842,46 @@ function renderProvenance() {
       ["OPL build", buildLabel()]
     ];
     summary = "LUDB " + (p.record || "119") + " · real Lead II · 500 Hz · physical mV";
+  } else if (state.sourceMode === "practice") {
+    const item = practiceManifestItem();
+    const recordLabel = state.practiceReveal ? (p.record || item?.source_record || state.record.record_id) : "hidden until review";
+    values = [
+      ["Dataset", p.dataset || "Lobachevsky University ECG Database (LUDB)"],
+      ["Repository", p.repository || "PhysioNet"],
+      ["Version", p.dataset_version || "1.0.1"],
+      ["DOI", p.doi || "10.13026/eegm-h675"],
+      ["License", p.license || "ODC Attribution 1.0"],
+      ["Exercise", item?.label || "Practice ECG"],
+      ["Source record", recordLabel],
+      ["Lead", p.lead || "II"],
+      ["Sampling", state.record.sampling_rate_hz + " Hz"],
+      ["Amplitude", "Physical mV from source WFDB metadata"],
+      ["Expert reference", state.practiceReveal ? "Cardiologist delineations revealed" : "Hidden until learner review"],
+      ["OPL processing", "No filtering applied to displayed practice waveform"],
+      ["OPL build", buildLabel()]
+    ];
+    summary = (item?.label || "Practice ECG") + " · LUDB Lead II · physical mV · expert hidden";
+  } else if (state.sourceMode === "real") {
+    const acquisition = state.record?.adc?.resolution_bits ? state.record.adc.resolution_bits + "-bit" : "—";
+    const gain = derivedCountsPerMv(state.record);
+    values = [
+      ["Dataset", p.dataset || m.title || "ECG-ID Database"],
+      ["Repository", p.repository || m.repository || "PhysioNet"],
+      ["Contributor", p.contributor || m.contributor || "Tatiana Lugovaya"],
+      ["Version", p.dataset_version || m.version || "1.0.0"],
+      ["DOI", p.doi || m.doi || "10.13026/C2J01F"],
+      ["License", p.license || m.license || "ODC Attribution 1.0"],
+      ["Record", state.record.record_id],
+      ["Sampling", state.record.sampling_rate_hz + " Hz"],
+      ["Amplitude", gain ? "Physical mV derived from known source gain (" + gain + " ADC per mV)" : "Physical mV derived from source metadata"],
+      ["Acquisition", acquisition],
+      ["OPL processing", "Raw and source-filtered views available; no hidden OPL filtering"],
+      ["OPL build", buildLabel()]
+    ];
+    summary = (p.dataset || "ECG-ID") + " · imperfect real ECG · physical mV · derived from source ADC";
   } else {
     const acquisition = state.record?.adc?.resolution_bits ? state.record.adc.resolution_bits + "-bit" : "—";
+    const gain = derivedCountsPerMv(state.record);
     values = [
       ["Dataset", p.dataset || m.title || "ECG-ID Database"],
       ["Repository", p.repository || m.repository || "PhysioNet"],
@@ -697,11 +892,11 @@ function renderProvenance() {
       ["Record", state.record.record_id],
       ["Sampling", state.record.sampling_rate_hz + " Hz"],
       ["Acquisition", acquisition],
-      ["OPL processing", "None unless explicitly selected"],
+      ["Amplitude", gain ? "Source ADC counts · known conversion " + gain + " ADC per mV (1 ADC = " + roundNumber(1/gain, 4) + " mV)" : "Source ADC counts"],
+      ["OPL processing", "Raw and source-filtered views available; machine-scale learning"],
       ["OPL build", buildLabel()]
     ];
-    summary = (p.dataset || "ECG-ID") + " · " + (p.repository || "PhysioNet") + " · " +
-      state.record.sampling_rate_hz + " Hz · " + acquisition;
+    summary = (p.dataset || "ECG-ID") + " · machine view · ADC counts · " + state.record.sampling_rate_hz + " Hz";
   }
 
   el.provenanceSummary.textContent = summary;
@@ -715,7 +910,7 @@ function renderProvenance() {
 }
 
 function renderValidation() {
-  if (state.sourceMode !== "real" || !state.realRecord) {
+  if (!((state.sourceMode === "real" || state.sourceMode === "adc") && state.realRecord)) {
     el.validationPassed.textContent = "—";
     el.validationTotal.textContent = "real record only";
     el.validationChecks.innerHTML = "";
@@ -754,7 +949,8 @@ function renderMeasurements() {
   const rows = [
     ["A", aText],
     ["B", bText],
-    ["Δt", fs && a != null && b != null ? roundNumber(durationMs(a,b,fs), 2) + " ms" : "—"],
+    ["Δt", fs && a != null && b != null ? formatTimeMeasurement(a,b,fs) : "—"],
+    ["ΔV", signal && a != null && b != null ? formatVoltageMeasurement(signal[a],signal[b]) : "—"],
     ["Signal", signalLabel()]
   ];
   el.measurementGrid.innerHTML = rows.map(([label,value]) =>
@@ -763,11 +959,12 @@ function renderMeasurements() {
 
   if (el.dockDelta) {
     el.dockDelta.textContent = fs && a != null && b != null
-      ? "Δt " + roundNumber(durationMs(a,b,fs), 1) + " ms"
+      ? "Δt " + roundNumber(durationMs(a,b,fs), 1) + " ms · " + roundNumber(Math.abs(durationMs(a,b,fs))/40,2) + " boxes"
       : "Δt —";
   }
 
   renderMeasurementAssist();
+  renderPracticeReview();
 
   if (state.sourceMode === "ideal") {
     el.baselineOutput.textContent = "0 mV";
@@ -777,7 +974,15 @@ function renderMeasurements() {
     el.baselineInput.value = String(roundNumber(state.baseline, 4));
   } else if (state.baselineStatus === "uncertain") {
     el.baselineOutput.textContent = "uncertain";
-    el.baselineInput.value = String(roundNumber(state.baseline, 3));
+    el.baselineInput.value = String(roundNumber(state.baseline, 4));
+  } else if (state.sourceMode === "real") {
+    el.baselineOutput.textContent = formatSigned(roundNumber(state.baseline, 4)) + " mV ref";
+    el.baselineInput.value = String(roundNumber(state.baseline, 4));
+  } else if (state.sourceMode === "practice") {
+    el.baselineOutput.textContent = state.baselineStatus === "unselected"
+      ? "choose baseline"
+      : formatSigned(roundNumber(state.baseline, 4)) + " mV";
+    el.baselineInput.value = String(roundNumber(state.baseline, 4));
   } else {
     el.baselineOutput.textContent = formatSigned(state.baseline) + " ADC";
     el.baselineInput.value = String(roundNumber(state.baseline, 3));
@@ -791,11 +996,11 @@ function idealCursorText(sample, value) {
   const delta = value - IDEAL_ECG_SPEC.baseline_mV;
   if (!landmark) {
     return roundNumber(sampleToMs(sample, state.record.sampling_rate_hz), 2) +
-      " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
+      " ms · " + formatSigned(roundNumber(delta, 3)) + " mV · " + formatSigned(roundNumber(delta/0.1,2)) + " vertical boxes";
   }
   const offset = roundNumber(landmark.distance_ms, 1);
   const offsetText = offset === 0 ? "on landmark" : (offset > 0 ? "+" : "") + offset + " ms";
-  return "near " + landmark.label + " · " + offsetText + " · " + formatSigned(roundNumber(delta, 3)) + " mV";
+  return "near " + landmark.label + " · " + offsetText + " · " + formatSigned(roundNumber(delta, 3)) + " mV · " + formatSigned(roundNumber(delta/0.1,2)) + " vertical boxes";
 }
 
 function renderMeasurementAssist() {
