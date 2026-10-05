@@ -1557,7 +1557,7 @@ function draw() {
   const filtered = state.record.signals.filtered.slice(start,end);
 
   let displayed;
-  if (state.sourceMode === "ideal" || state.sourceMode === "clean") {
+  if (state.sourceMode === "ideal" || state.sourceMode === "clean" || state.sourceMode === "practice") {
     displayed = raw;
   } else {
     displayed = state.mode === "raw" ? raw : state.mode === "filtered" ? filtered : raw.concat(filtered);
@@ -1601,6 +1601,8 @@ function draw() {
     drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--cyan"),1.7*dpr);
   } else if (state.sourceMode === "clean") {
     drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--emerald"),1.55*dpr);
+  } else if (state.sourceMode === "practice") {
+    drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--emerald"),1.55*dpr);
   } else {
     if (state.mode === "raw" || state.mode === "overlay") {
       drawSignal(state.record.signals.raw,start,end,yMin,yMax,cssColor("--emerald"),1.35*dpr);
@@ -1615,6 +1617,8 @@ function draw() {
       drawIdealNotation(start,end,yMin,yMax,dpr);
     } else if (state.sourceMode === "clean") {
       drawCleanAnnotations(start,end,yMin,yMax,dpr);
+    } else if (state.sourceMode === "practice") {
+      if (state.practiceReveal) drawCleanAnnotations(start,end,yMin,yMax,dpr);
     } else {
       drawRealAnnotations(start,end,dpr);
     }
@@ -1687,6 +1691,11 @@ function drawIdealNotation(start,end,yMin,yMax,dpr) {
   }
   ctx.textAlign="left";
 
+  drawBracket(
+    lm.p_onset,lm.p_end,
+    "P · " + IDEAL_ECG_SPEC.teaching_measurements.p_wave_duration_ms + " ms",
+    el.ecgCanvas.height-90*dpr,start,end,dpr
+  );
   drawBracket(
     lm.p_onset,lm.qrs_onset,
     "PR · " + IDEAL_ECG_SPEC.teaching_measurements.pr_interval_ms + " ms",
@@ -1784,7 +1793,7 @@ function drawCaliperSpan(sampleA,sampleB,start,end,dpr){
   ctx.fillStyle=cssColor("--text-secondary");
   ctx.font="bold "+10*dpr+"px sans-serif";
   ctx.textAlign="center";
-  ctx.fillText(roundNumber(duration,1)+" ms",(x1+x2)/2,14*dpr);
+  ctx.fillText(roundNumber(duration,1)+" ms · "+roundNumber(duration/40,2)+" boxes",(x1+x2)/2,14*dpr);
   ctx.textAlign="left";
 }
 
@@ -1812,15 +1821,23 @@ function restoreSession(mode=state.sourceMode) {
 function persistSession() {
   try {
     localStorage.setItem(sessionKey(),JSON.stringify({
-      baseline_adc:state.baseline,
+      baseline_value:state.baseline,
       baseline_status:state.baselineStatus,
       calipers:state.calipers,
-      source_mode:state.sourceMode
+      source_mode:state.sourceMode,
+      measurement_signal:state.measurementSignal,
+      display_mode:state.mode,
+      window_seconds:state.windowSeconds,
+      window_start_seconds:state.windowStartSeconds,
+      vertical_grid_adc:state.verticalGridAdc,
+      practice_task:state.practiceTask,
+      practice_record_id:state.practiceRecordId
     }));
   } catch {}
 }
 
 function sessionKey(mode=state.sourceMode){
+  if (mode === "practice") return SESSION_KEY_BASE + "practice:" + (state.practiceRecordId || "default");
   return SESSION_KEY_BASE + mode;
 }
 
@@ -1888,7 +1905,50 @@ function updateLogicPath(){
 }
 
 function scrollToLab(){
-  document.querySelector(".core-workspace")?.scrollIntoView({behavior:"smooth", block:"start"});
+  const anchor = document.querySelector(".instrument-toolbar") || document.querySelector(".core-workspace");
+  if (!anchor) return;
+  const header = document.querySelector(".app-header");
+  const headerHeight = header ? header.getBoundingClientRect().height : 0;
+  const top = anchor.getBoundingClientRect().top + window.scrollY - headerHeight - 12;
+  window.scrollTo({top: Math.max(0, top), behavior:"smooth"});
+}
+
+function derivedCountsPerMv(record) {
+  const gain = record?.adc?.gain_counts_per_unit?.[0];
+  return Number.isFinite(Number(gain)) && Number(gain) !== 0 ? Number(gain) : null;
+}
+
+function convertRecordToPhysicalMv(record) {
+  if (!record) return null;
+  const gains = record.adc?.gain_counts_per_unit || [];
+  const baselines = record.adc?.baseline || [];
+  const units = record.units || [];
+  const convertSignal = (signal, index) => {
+    const gain = Number(gains[index] ?? gains[0]);
+    const baseline = Number(baselines[index] ?? baselines[0] ?? 0);
+    if (!Number.isFinite(gain) || gain === 0) return [...signal];
+    return signal.map(value => (Number(value) - baseline) / gain);
+  };
+  const converted = JSON.parse(JSON.stringify(record));
+  converted.record_id = REAL_MV_RECORD_ID;
+  converted.signal_names = ["ECG I (derived physical mV)", "ECG I filtered (derived physical mV)"];
+  converted.units = units.map(() => "mV");
+  converted.signals = {
+    raw: convertSignal(record.signals.raw, 0),
+    filtered: convertSignal(record.signals.filtered, 1)
+  };
+  converted.recommended_baseline_mV = 0;
+  converted.provenance = {
+    ...(record.provenance || {}),
+    source_signal_0: "ECG I converted to physical mV from source ADC counts",
+    source_signal_1: "ECG I filtered converted to physical mV from source ADC counts",
+    known_preprocessing: "Stage 3 converts source ADC counts to physical mV using the published WFDB gain metadata; Stage 4 preserves the original ADC-count machine view.",
+    opl_transformations: [
+      ...((record.provenance?.opl_transformations) || []),
+      "Derived physical-mV view generated in-browser from source ADC counts and WFDB gain metadata"
+    ]
+  };
+  return converted;
 }
 
 function buildLabel(){
