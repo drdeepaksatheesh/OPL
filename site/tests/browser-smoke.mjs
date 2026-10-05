@@ -43,6 +43,7 @@ try {
     const idealMeasurement = await page.locator("#measurementGrid").innerText();
     assert.match(idealMeasurement, /mV/);
     assert.match(idealMeasurement, /Δt/);
+    assert.match(idealMeasurement, /small boxes/);
     const assist = await page.locator("#measurementAssist").innerText();
     assert.match(assist, /PR interval/);
     assert.match(assist, /model 160/);
@@ -91,8 +92,8 @@ try {
     assert.equal(await page.locator("#windowLength").inputValue(), "2");
     const realBodyClass = await page.getAttribute("body", "class");
     assert.match(realBodyClass || "", /source-real/);
-    assert.match(await page.locator("#rulerSmallBox").innerText(), /40 ms × 50 ΔADC/);
-    assert.match(await page.locator("#rulerLargeBox").innerText(), /200 ms × 250 ΔADC/);
+    assert.match(await page.locator("#rulerSmallBox").innerText(), /40 ms × 0.1 mV/);
+    assert.match(await page.locator("#gridScale").innerText(), /ADC→mV conversion/);
 
     await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
@@ -106,8 +107,43 @@ try {
     await canvas.tap({position: {x: box.width * 0.35, y: box.height * 0.5}});
     await canvas.tap({position: {x: box.width * 0.62, y: box.height * 0.5}});
     const uncertainMeasurement = await page.locator("#measurementGrid").innerText();
-    assert.match(uncertainMeasurement, /amplitude withheld/);
-    assert.match(uncertainMeasurement, /ms/);
+    assert.match(uncertainMeasurement, /withheld/);
+    assert.match(uncertainMeasurement, /small boxes/);
+
+    await page.locator("#nextToAdc").tap();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "adc");
+    assert.match((await page.getAttribute("body","class")) || "", /source-machine/);
+    assert.match(await page.locator("#rulerSmallBox").innerText(), /40 ms × 20 ADC/);
+    assert.match(await page.locator("#gridScale").innerText(), /~0.1 mV/);
+
+    await page.locator("#practiceJump").tap();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "practice");
+    assert.match((await page.getAttribute("body","class")) || "", /source-practice/);
+    assert.equal(await page.locator(".practice-record-button").count(), 6);
+    await page.locator(".practice-record-button").nth(1).tap();
+    await page.locator("#practiceTask").selectOption("qrs_duration");
+    await page.locator("#baselineMedian").tap();
+
+    const practiceRecord = await page.evaluate(async () => {
+      const response = await fetch("./practice/records/LUDB_58_LeadII.json");
+      return await response.json();
+    });
+    const pOn = practiceRecord.annotations.find(a => a.symbol === "(" && a.wave === "QRS" && a.sample < 1000);
+    const pEnd = practiceRecord.annotations.find(a => a.symbol === ")" && a.wave === "QRS" && a.sample > pOn.sample && a.sample < 1000);
+    const practiceCanvas = page.locator("#ecgCanvas");
+    const practiceBox = await practiceCanvas.boundingBox();
+    const practiceEnd = 2 * practiceRecord.sampling_rate_hz - 1;
+    await practiceCanvas.tap({position:{x:practiceBox.width*(pOn.sample/practiceEnd),y:practiceBox.height*0.5}});
+    await practiceCanvas.tap({position:{x:practiceBox.width*(pEnd.sample/practiceEnd),y:practiceBox.height*0.5}});
+    const practiceMeasurement = await page.locator("#measurementGrid").innerText();
+    assert.match(practiceMeasurement,/small boxes/);
+    assert.match(practiceMeasurement,/mV/);
+    await page.locator("#practiceReveal").tap();
+    assert.match(await page.locator("#practiceReview").innerText(),/Expert revealed/);
+    assert.match(await page.locator("#practiceReview").innerText(),/record 58/);
+    assert.match(await page.locator("#measurementAssist").innerText(),/QRS duration/i);
 
     await page.locator("details.dock-card.biological-only").evaluate(el => { el.open = true; });
     const rrText = await page.locator("#rrBridgeStats").innerText();
@@ -119,7 +155,7 @@ try {
     const feedback = await page.locator("#quizFeedback").innerText();
     assert.ok(feedback.length > 10);
 
-    await page.screenshot({path: out + "/mobile-real.png", fullPage: true});
+    await page.screenshot({path: out + "/mobile-practice.png", fullPage: true});
     await page.close();
   }
 
@@ -170,21 +206,32 @@ try {
     await page.locator("#nextToImperfect").click();
     await page.waitForTimeout(100);
     assert.equal(await page.locator("#stageSelect").inputValue(), "real");
+    assert.match(await page.locator("#gridScale").innerText(),/0.1 mV/);
     await page.locator("#evidenceDrawer").evaluate(el => { el.open = true; });
     const validationText = await page.locator(".validation-section").innerText();
     assert.match(validationText, /8\/8/);
     assert.equal(await page.locator("#downloadValidation").isVisible(), true);
+
+    await page.locator("#nextToAdc").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "adc");
+    assert.match(await page.locator("#gridScale").innerText(),/20 ADC/);
+
+    await page.locator("#practiceJump").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#stageSelect").inputValue(), "practice");
+    assert.equal(await page.locator(".practice-record-button").count(),6);
 
     await page.locator("#themeToggle").click();
     assert.match((await page.getAttribute("body","class")) || "", /theme-light/);
     await page.locator("#themeToggle").click();
     assert.match((await page.getAttribute("body","class")) || "", /theme-dark/);
 
-    await page.screenshot({path: out + "/desktop-real.png", fullPage: true});
+    await page.screenshot({path: out + "/desktop-practice.png", fullPage: true});
     await page.close();
   }
 
-  console.log("Ideal-to-real responsive browser smoke test passed.");
+  console.log("Four-stage ECG story + real-ECG practice responsive browser smoke test passed.");
 } finally {
   await browser.close();
 }
