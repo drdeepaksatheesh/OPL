@@ -18,8 +18,8 @@ export const IDEAL_ECG_SPEC = Object.freeze({
   },
   fiducials: {
     p_onset_s: -0.20,
-    p_peak_s: -0.16,
-    p_end_s: -0.12,
+    p_peak_s: -0.15,
+    p_end_s: -0.10,
     qrs_onset_s: -0.040,
     q_s: -0.030,
     r_s: 0,
@@ -30,9 +30,9 @@ export const IDEAL_ECG_SPEC = Object.freeze({
     t_end_s: 0.360
   },
   teaching_measurements: {
-    p_wave_duration_ms: 80,
+    p_wave_duration_ms: 100,
     pr_interval_ms: 160,
-    pr_segment_ms: 80,
+    pr_segment_ms: 60,
     qrs_duration_ms: 90,
     st_segment_ms: 150,
     qt_interval_ms: 400,
