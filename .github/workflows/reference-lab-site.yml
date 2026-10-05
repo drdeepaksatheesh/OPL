@@ -66,7 +66,7 @@ jobs:
         run: python scripts/verify_ludb_clean_reference.py
 
       - name: Run Reference Lab calculation, validation and teaching tests
-        run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/ideal-ecg.test.mjs site/tests/ecg-paper.test.mjs site/tests/ludb-calipers.test.mjs site/tests/teaching.test.mjs
+        run: node --test site/tests/reference-lab-core.test.mjs site/tests/reference-validation.test.mjs site/tests/ideal-ecg.test.mjs site/tests/ecg-paper.test.mjs site/tests/ludb-calipers.test.mjs site/tests/practice-bank.test.mjs site/tests/teaching.test.mjs
 
       - name: Build offline-capable static site
         run: python scripts/build_reference_site.py
@@ -79,6 +79,8 @@ jobs:
           test -f build/opl-site/reference/ecg-id/data/Person_01_rec_1.json
           test -f build/opl-site/reference/ecg-id/data/LUDB_clean_LeadII.json
           test -f build/opl-site/reference/ecg-id/data/LUDB_clean_selection.json
+          test -f build/opl-site/reference/ecg-id/practice/practice_manifest.json
+          test -f build/opl-site/reference/ecg-id/practice/records/LUDB_58_LeadII.json
           test -f build/opl-site/icons/icon-192.png
           test -f build/opl-site/icons/icon-512.png
           test -f build/opl-reference-lab-static.zip
