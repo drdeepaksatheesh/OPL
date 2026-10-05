@@ -310,11 +310,28 @@ body.mode-teaching .segmented{display:grid}
 body.mode-teaching .teaching-hint{display:flex}
 body.source-ideal .clean-only,
 body.source-ideal .imperfect-only,
-body.source-ideal .biological-only{display:none!important}
+body.source-ideal .adc-only,
+body.source-ideal .practice-only,
+body.source-ideal .biological-only,
+body.source-ideal .stage3-only{display:none!important}
 body.source-clean .ideal-only,
-body.source-clean .imperfect-only{display:none!important}
+body.source-clean .imperfect-only,
+body.source-clean .adc-only,
+body.source-clean .practice-only,
+body.source-clean .stage3-only{display:none!important}
 body.source-real .ideal-only,
-body.source-real .clean-only{display:none!important}
+body.source-real .clean-only,
+body.source-real .adc-only,
+body.source-real .practice-only{display:none!important}
+body.source-machine .ideal-only,
+body.source-machine .clean-only,
+body.source-machine .practice-only,
+body.source-machine .stage3-only{display:none!important}
+body.source-practice .ideal-only,
+body.source-practice .clean-only,
+body.source-practice .adc-only,
+body.source-practice .stage3-only,
+body.source-practice .imperfect-only:not(.practice-shared){display:none!important}
 
 @media(max-width:850px){
   button,.file-button,select,input[type="number"]{min-height:44px}
@@ -873,4 +890,60 @@ body.mode-teaching #evidenceDrawer:not([open]) .drawer-body{display:none}
   .ruler-heading,.ruler-item{
     flex-basis:155px;
   }
+}
+
+
+/* Practice Lab — separate from the four-stage teaching story. */
+.practice-panel{
+  display:grid;
+  grid-template-columns:minmax(220px,1.1fr) minmax(360px,2fr) minmax(230px,1fr);
+  gap:10px;
+  align-items:stretch;
+  margin:0 0 12px;
+  padding:10px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--panel-bg);
+}
+.practice-copy,.practice-actions,.practice-status,.practice-review{
+  border:1px solid var(--border-soft);
+  border-radius:9px;
+  background:var(--group-bg);
+  padding:10px;
+}
+.practice-copy h2{margin:.1rem 0 .35rem;font-size:1rem}
+.practice-copy p{margin:.25rem 0;color:var(--text-secondary);font-size:.76rem;line-height:1.4}
+.practice-attribution{color:var(--text-muted)!important;font-size:.67rem!important}
+.practice-record-list{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:7px;
+}
+.practice-record-button{
+  min-height:54px;
+  text-align:left;
+  display:grid;
+  gap:2px;
+  padding:8px 10px;
+}
+.practice-record-button strong{font-size:.8rem}
+.practice-record-button small{font-size:.65rem;color:var(--text-muted)}
+.practice-record-button.active{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+.practice-actions{display:grid;gap:7px;align-content:start}
+.practice-actions label{font-size:.68rem;color:var(--text-muted);text-transform:uppercase;font-weight:800;letter-spacing:.06em}
+.practice-status,.practice-review{grid-column:1/-1;font-size:.78rem;line-height:1.45}
+.practice-review{border-left:3px solid var(--emerald)}
+.practice-review strong{color:var(--emerald)}
+.practice-review .warn{color:var(--gold)}
+.practice-only[hidden]{display:none!important}
+
+@media(max-width:980px){
+  .practice-panel{grid-template-columns:1fr 1fr}
+  .practice-actions{grid-column:1/-1;grid-template-columns:1fr 1fr 1fr;align-items:end}
+  .practice-actions label{grid-column:1/-1}
+}
+@media(max-width:700px){
+  .practice-panel{grid-template-columns:1fr}
+  .practice-record-list{grid-template-columns:1fr 1fr}
+  .practice-actions{grid-column:auto;grid-template-columns:1fr}
 }
