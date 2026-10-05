@@ -1,4 +1,4 @@
-const CACHE = "opl-reference-labs-v1";
+const CACHE = "opl-reference-labs-v2-practice";
 const BASE = new URL("./", self.location.href).pathname;
 const SHELL = [
   BASE,
@@ -40,7 +40,7 @@ self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.includes("/reference/") && url.pathname.includes("/data/")) {
+  if (url.pathname.includes("/reference/") && (url.pathname.includes("/data/") || url.pathname.includes("/practice/"))) {
     event.respondWith(
       fetch(event.request)
         .then(response => {
