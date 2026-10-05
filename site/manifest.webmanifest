@@ -1,0 +1,29 @@
+{
+  "name": "OpenPhysiologyLab ECG Reference Lab",
+  "short_name": "OPL ECG",
+  "description": "Open-source ECG Reference Lab for transparent visualization, measurement and reproducible validation using trusted open data.",
+  "start_url": "./reference/ecg-id/index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "id": "./reference/ecg-id/"
+}

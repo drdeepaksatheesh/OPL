@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173b57">
+  <title>OPL Classroom · Teacher</title>
+  <link rel="stylesheet" href="classroom.css">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>OPL Classroom · Teacher</h1>
+    <p>ECG Reference Lab classroom prototype</p>
+  </div>
+  <div class="row">
+    <span class="badge">Local / same Wi-Fi</span>
+    <span class="badge" id="connectionBadge">Connecting…</span>
+  </div>
+</header>
+<main>
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="muted">JOIN CODE</div>
+        <div class="code" id="joinCode">------</div>
+        <div class="muted" id="studentUrl">Student URL loading…</div>
+      </div>
+      <div class="row">
+        <button id="copyStudentUrl">Copy student link</button>
+        <button id="exportSession">Export session JSON</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="metric-grid" aria-label="Classroom summary">
+    <div class="metric"><span>Joined</span><strong id="joinedCount">0</strong></div>
+    <div class="metric"><span>Pre-test complete</span><strong id="preCount">0</strong></div>
+    <div class="metric"><span>Recently active</span><strong id="activeCount">0</strong></div>
+    <div class="metric"><span>Post-test complete</span><strong id="postCount">0</strong></div>
+  </section>
+
+  <div class="grid">
+    <div class="stack">
+      <section class="card">
+        <h2>Class flow</h2>
+        <div class="phase-buttons">
+          <button data-phase="pre">Pre-test</button>
+          <button data-phase="teach">Teach</button>
+          <button data-phase="post">Post-test</button>
+          <button data-phase="closed">Close</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="file-picker">
+            Load questionnaire JSON
+            <input id="questionnaireFile" type="file" accept=".json,application/json">
+          </label>
+          <span class="muted" id="questionnaireStatus">Default ECG questionnaire</span>
+        </div>
+        <p class="muted" id="phaseStatus"></p>
+      </section>
+
+      <section class="card">
+        <h2>Teaching sections</h2>
+        <p class="muted">The laptop keeps the full Reference Lab. Phones receive the section, trace window and teaching prompt.</p>
+        <div id="sectionList" class="section-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>Full ECG Reference Lab</h2>
+        <iframe src="../reference/ecg-id/index.html?classroom=teacher&mode=advanced" title="Full ECG Reference Lab"></iframe>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="card">
+        <h2>Live MCQ</h2>
+        <div id="liveQuestion"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="openLiveQuestion" class="primary">Push question</button>
+          <button id="closeLiveQuestion">Close question</button>
+        </div>
+        <div id="liveResponses" class="stack" style="margin-top:12px"></div>
+      </section>
+
+      <section class="card">
+        <h2>Doubt timeline</h2>
+        <p class="muted">Doubts are attached to the lesson section and elapsed class time.</p>
+        <div id="doubtList" class="doubt-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>Pre → post summary</h2>
+        <div id="prePostSummary" class="stack"></div>
+      </section>
+
+      <section class="card">
+        <h2>Engagement/activity</h2>
+        <p class="muted">These are transparent activity proxies, not a measurement of attention.</p>
+        <div id="engagementSummary" class="stack"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<footer>Open-source · decentralized · classroom data stays on the teacher laptop in this prototype.</footer>
+<script type="module" src="teacher.mjs"></script>
+</body>
+</html>

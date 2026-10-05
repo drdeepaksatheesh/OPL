@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="OpenPhysiologyLab — open, reproducible physiology Reference Labs built from trusted datasets.">
+  <meta name="theme-color" content="#173b57">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>OpenPhysiologyLab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">OPENPHYSIOLOGYLAB</p>
+      <h1>Trusted data. Visible analysis. Understand physiology.</h1>
+      <p class="lede">A growing collection of open, transparent Reference Labs that turn trusted physiological datasets into visible measurements, reproducible analysis and understandable physiology.</p>
+      <div class="notice">Public-site prototype · individual modules are released only after they pass the OPL release gate.</div>
+      <p><button data-install-opl hidden>Install OPL for offline use</button></p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="intro">
+      <h2>Use the instrument, not the repository</h2>
+      <p>Each OPL Reference Lab begins with trusted, citable data and makes the path from waveform to physiological measurement visible. Source provenance, transformations, validation notes and citation information remain part of the instrument itself. Live hardware acquisition will later feed these same interfaces.</p>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Physiology instruments</h2>
+        <span id="count"></span>
+      </div>
+      <div id="modules" class="grid" aria-live="polite"></div>
+    </section>
+
+    <section class="principles">
+      <h2>What a public OPL release means</h2>
+      <div class="principle-grid">
+        <article><strong>Open-source</strong><span>Released analysis logic is inspectable and attributable.</span></article>
+        <article><strong>Decentralized</strong><span>No single vendor, institution or acquisition device defines the workflow.</span></article>
+        <article><strong>Reliable</strong><span>Claims are limited to what reference evidence and tests actually support.</span></article>
+        <article><strong>Reproducible</strong><span>Exact data, transformations and software versions remain traceable.</span></article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span>OpenPhysiologyLab</span>
+    <span>Educational and research prototype · not a diagnostic medical device.</span>
+  </footer>
+
+<script>
+const statusLabel = {
+  "development":"In development",
+  "planned":"Planned",
+  "planned-public-beta":"Public beta planned",
+  "beta":"Beta",
+  "validated":"Validated"
+};
+
+fetch("modules.json")
+  .then(r => r.json())
+  .then(data => {
+    const root = document.getElementById("modules");
+    document.getElementById("count").textContent = data.modules.length + " modules";
+    data.modules.forEach(m => {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="area">${m.area}</span>
+          <span class="status">${statusLabel[m.status] || m.status}</span>
+        </div>
+        <h3>${m.name}</h3>
+        <p>${m.summary}</p>
+        <div class="card-foot">${m.href ? `<a href="${m.href}">Open instrument →</a>` : "Release page will appear here when this module crosses the public release gate."}</div>
+      `;
+      root.appendChild(card);
+    });
+  })
+  .catch(() => {
+    document.getElementById("modules").innerHTML = "<p>Module manifest could not be loaded.</p>";
+  });
+</script>
+  <script src="config.js"></script>
+  <script src="pwa.js"></script>
+  <script src="analytics.js"></script>
+</body>
+</html>

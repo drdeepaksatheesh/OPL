@@ -1,0 +1,47 @@
+{
+  "id": "physionet-ecg-id-v1.0.0",
+  "title": "ECG-ID Database",
+  "version": "1.0.0",
+  "repository": "PhysioNet",
+  "source_url": "https://physionet.org/content/ecgiddb/1.0.0/",
+  "doi": "10.13026/C2J01F",
+  "license": "Open Data Commons Attribution License v1.0",
+  "contributor": "Tatiana Lugovaya",
+  "associated_work": "Biometric human identification based on electrocardiogram. Master's thesis, Electrotechnical University LETI, Saint-Petersburg, 2005.",
+  "signal": {
+    "lead": "I",
+    "duration_seconds": 20,
+    "sampling_rate_hz": 500,
+    "adc_resolution_bits": 12,
+    "nominal_input_range_mV": "±10",
+    "channels": [
+      {
+        "index": 0,
+        "label": "ECG I",
+        "role": "raw"
+      },
+      {
+        "index": 1,
+        "label": "ECG I filtered",
+        "role": "source-provided filtered"
+      }
+    ]
+  },
+  "annotations": {
+    "annotated_beats_per_record": 10,
+    "markers": "Automated R- and T-wave peak markers",
+    "event_count": "Read from the source .atr file; do not equate event count with beat count.",
+    "audit_status": "unaudited"
+  },
+  "opl_use": {
+    "phase": "ECG Reference Lab v0.1",
+    "purpose": [
+      "raw-versus-filtered visualization",
+      "baseline-relative amplitude teaching",
+      "time/amplitude caliper validation",
+      "annotation coordinate mapping"
+    ],
+    "diagnostic_use": false,
+    "redistribution_note": "Any bundled reference record must retain source attribution and license information."
+  }
+}

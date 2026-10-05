@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use OpenPhysiologyLab or one of its released modules, please cite the specific version associated with your work."
+title: "OpenPhysiologyLab"
+type: software
+authors:
+  - family-names: "S"
+    given-names: "Deepak"
+repository-code: "https://github.com/drdeepaksatheesh/OPL"
+url: "https://github.com/drdeepaksatheesh/OPL"
+license: "GPL-3.0"
+version: "0.1-alpha"
+date-released: "2026-09-18"
+abstract: "OpenPhysiologyLab is a modular physiology teaching, acquisition, analysis and validation platform designed around transparent, reproducible, low-cost workflows."

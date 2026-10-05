@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#050608">
+  <meta name="description" content="OpenPhysiologyLab ECG Reference Lab — ideal notation, clean real ECG, imperfect real ECG in physical mV, machine-view ADC teaching, and open-data practice.">
+  <title>ECG Reference Lab · OpenPhysiologyLab</title>
+  <link rel="manifest" href="../../manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-dark source-ideal">
+  <header class="app-header">
+    <div class="brand-block">
+      <a class="back" href="../../index.html">← OpenPhysiologyLab</a>
+      <div>
+        <p class="eyebrow">REFERENCE LAB 01 · ECG</p>
+        <h1>ECG Reference Lab</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="mode-switch" role="group" aria-label="OPL interface mode">
+        <button id="quickMode" class="mode-button" type="button" aria-pressed="false">Teaching</button>
+        <button id="advancedMode" class="mode-button" type="button" aria-pressed="false">Advanced</button>
+      </div>
+      <button id="themeToggle" type="button" aria-label="Toggle light and dark theme">Light mode</button>
+      <button data-install-opl hidden>Install OPL</button>
+      <span class="online-state" id="onlineState">Loading…</span>
+    </div>
+  </header>
+
+  <main class="instrument-shell">
+    <section class="instrument-toolbar" aria-label="ECG stage and view">
+      <div class="stage-select-wrap">
+        <label for="stageSelect">Stage</label>
+        <select id="stageSelect">
+          <optgroup label="Four-stage teaching story">
+            <option value="ideal">1 · Ideal ECG notation</option>
+            <option value="clean">2 · Clean real ECG · LUDB</option>
+            <option value="real">3 · Imperfect real ECG · physical mV</option>
+            <option value="adc">4 · Machine view · ECG-ID ADC</option>
+          </optgroup>
+          <optgroup label="Practice">
+            <option value="practice">Practice lab · unfamiliar real ECGs</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="stage-summary">
+        <span class="stage-badge ideal-only">1</span>
+        <span class="stage-badge clean-only">2</span>
+        <span class="stage-badge imperfect-only stage3-only">3</span>
+        <span class="stage-badge adc-only">4</span>
+        <span class="stage-badge practice-only">P</span>
+        <div>
+          <strong class="ideal-only">Learn the ruler on certainty</strong>
+          <strong class="clean-only">Repeat it on real physiology</strong>
+          <strong class="imperfect-only stage3-only">Measure only what the signal supports</strong>
+          <strong class="adc-only">Bridge physiology to the machine</strong>
+          <strong class="practice-only">Practice on unfamiliar real ECGs</strong>
+          <small class="ideal-only">Synthetic P/Q/R/S/T · exact baseline · known intervals</small>
+          <small class="clean-only">Real Lead II · physical mV · same 2 s teaching ruler · cardiologist boundaries</small>
+          <small class="imperfect-only stage3-only">Imperfect real ECG in physical mV · same 2 s teaching ruler · inspect baseline uncertainty honestly</small>
+          <small class="adc-only">Same signal in source ADC counts · known conversion lets you connect machine units to physiology</small>
+          <small class="practice-only">Choose a trace · set the baseline · measure in boxes · reveal the cardiologist reference only after your attempt</small>
+        </div>
+      </div>
+
+      <div class="toolbar-actions">
+        <button type="button" class="drawer-jump" data-drawer-target="sourceDrawer">Source</button>
+        <button type="button" class="drawer-jump" data-drawer-target="controlsDrawer">Controls</button>
+        <button type="button" class="drawer-jump" data-drawer-target="evidenceDrawer">Evidence</button>
+        <button type="button" id="practiceJump" class="drawer-jump">Practice</button>
+      </div>
+    </section>
+
+    <section class="ecg-ruler-strip" aria-label="ECG paper ruler and common adult timing references">
+      <div class="ruler-heading">
+        <span class="section-kicker">ECG RULER</span>
+        <strong>Paper → time → potential</strong>
+        <small class="ideal-only">Common adult teaching references · 25 mm/s · 10 mm/mV</small>
+        <small class="clean-only">Common adult teaching references · source is physical mV</small>
+        <small class="imperfect-only stage3-only">Time ruler and vertical ruler are physical: 40 ms × 0.1 mV using known source conversion</small>
+        <small class="adc-only">Machine ruler: same time axis, vertical axis in ADC counts with known ADC→mV conversion</small>
+        <small class="practice-only">Real Lead II in physical mV · standard ECG paper ruler · cardiologist reference hidden until review</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>Small box</span>
+        <strong id="rulerSmallBox">40 ms × 0.1 mV</strong>
+        <small class="ideal-only">1 mm × 1 mm equivalent</small>
+        <small class="clean-only">1 mm × 1 mm equivalent</small>
+        <small class="imperfect-only stage3-only">same ECG paper geometry as stages 1–2</small>
+        <small class="adc-only">20 ADC ≈ 0.1 mV for this source</small>
+        <small class="practice-only">1 vertical small box = 0.1 mV</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>Large box</span>
+        <strong id="rulerLargeBox">200 ms × 0.5 mV</strong>
+        <small>5 × 5 small boxes</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>P duration</span>
+        <strong>≤ 3 small boxes</strong>
+        <small>≤ 120 ms</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>PR interval</span>
+        <strong>3–5 small boxes</strong>
+        <small>120–200 ms</small>
+      </div>
+
+      <div class="ruler-item">
+        <span>QRS duration</span>
+        <strong>&lt; 3 small boxes</strong>
+        <small>&lt; 120 ms</small>
+      </div>
+
+      <div class="ruler-item ruler-note">
+        <span>Amplitude / QT</span>
+        <strong class="ideal-only">P ≤ 0.25 mV in limb leads</strong>
+        <strong class="clean-only">P ≤ 0.25 mV in limb leads</strong>
+        <strong class="imperfect-only stage3-only">P ≤ 0.25 mV in limb leads</strong>
+        <strong class="adc-only">20 ADC ≈ 0.1 mV · 200 ADC ≈ 1 mV</strong>
+        <strong class="practice-only">Use boxes first; reveal expert reference after measuring</strong>
+        <small>QRS/T height is lead-dependent · QT varies with heart rate · teaching reference, not a diagnostic rule</small>
+      </div>
+    </section>
+
+    <section class="practice-panel practice-only" aria-labelledby="practice-heading">
+      <div class="practice-copy">
+        <p class="section-kicker">PRACTICE LAB</p>
+        <h2 id="practice-heading">Unknown real ECGs</h2>
+        <p>All exercises are open LUDB Lead-II recordings from PhysioNet. Cardiologist P/QRS/T boundaries are bundled locally but hidden until you choose <strong>Reveal expert</strong>.</p>
+        <p class="practice-attribution">LUDB v1.0.1 · PhysioNet · ODC Attribution 1.0 · DOI 10.13026/eegm-h675</p>
+      </div>
+      <div id="practiceRecordList" class="practice-record-list" aria-label="Choose a practice ECG"></div>
+      <div class="practice-actions">
+        <label for="practiceTask">Target</label>
+        <select id="practiceTask">
+          <option value="free">Free measurement</option>
+          <option value="p_wave">P-wave duration</option>
+          <option value="pr_interval" selected>PR interval</option>
+          <option value="pr_segment">PR segment</option>
+          <option value="qrs_duration">QRS duration</option>
+          <option value="st_segment">ST segment</option>
+          <option value="qt_interval">QT interval</option>
+          <option value="t_wave">T-wave duration</option>
+          <option value="rr_interval">R–R interval</option>
+        </select>
+        <button id="practiceReveal" type="button">Reveal expert</button>
+        <button id="practiceNewAttempt" type="button">Reset attempt</button>
+      </div>
+      <div id="practiceStatus" class="practice-status" aria-live="polite">Choose a record, establish a baseline, then place A→B.</div>
+      <div id="practiceReview" class="practice-review" hidden></div>
+    </section>
+
+    <section class="core-workspace">
+      <div class="plot-column">
+        <div class="plot-card">
+          <div class="plot-head">
+            <div class="legend">
+              <span class="ideal-only"><i class="ideal-swatch"></i> Ideal synthetic ECG</span>
+              <span class="clean-only"><i class="clean-swatch"></i> Clean real Lead II</span>
+              <span class="imperfect-only stage3-only"><i class="raw-swatch"></i> Raw ECG</span>
+              <span class="imperfect-only stage3-only"><i class="filtered-swatch"></i> Source filtered ECG</span>
+              <span class="adc-only"><i class="raw-swatch"></i> Raw ECG</span>
+              <span class="adc-only"><i class="filtered-swatch"></i> Source filtered ECG</span>
+              <span class="practice-only"><i class="clean-swatch"></i> Practice real Lead II</span>
+              <span><i class="baseline-swatch"></i> Baseline</span>
+            </div>
+            <span class="grid-chip" id="gridScale">40 ms × 0.1 mV</span>
+          </div>
+
+          <canvas id="ecgCanvas" aria-label="Interactive ECG waveform"></canvas>
+
+          <div class="plot-foot">
+            <p>Drag across the trace to place A→B. You can also click/tap A then B, or drag an existing caliper to refine it. Calipers remain anchored to source samples.</p>
+            <div class="segmented imperfect-only" role="group" aria-label="Quick waveform display">
+              <button type="button" data-quick-waveform="raw">Raw</button>
+              <button type="button" data-quick-waveform="filtered">Filtered</button>
+              <button type="button" data-quick-waveform="overlay" class="active">Overlay</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="measurementAssist" class="measurement-assist" aria-live="polite"></div>
+
+        <nav class="stage-navigation" aria-label="Move between ECG stages">
+          <button id="nextToClean" class="ideal-only stage-next" type="button">Next · Clean real ECG →</button>
+          <button id="nextToImperfect" class="clean-only stage-next" type="button">Next · Imperfect real ECG (mV) →</button>
+          <button id="nextToAdc" class="imperfect-only stage3-only stage-next" type="button">Next · Machine view (ADC) →</button>
+          <button id="backToClean" class="imperfect-only stage3-only stage-back" type="button">← Compare with clean real ECG</button>
+          <button id="backToReal" class="adc-only stage-back" type="button">← Compare with imperfect real ECG (mV)</button>
+          <button id="exitPractice" class="practice-only stage-back" type="button">← Return to four-stage story</button>
+        </nav>
+      </div>
+
+      <aside class="measurement-dock" aria-label="Measurement dock">
+        <details class="dock-card" open>
+          <summary>
+            <span>Calipers</span>
+            <span class="summary-value" id="dockDelta">Δt —</span>
+          </summary>
+          <div class="dock-body">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">MEASURE</p>
+                <h2>Geometry</h2>
+              </div>
+              <button id="resetCalipers">Reset</button>
+            </div>
+            <div id="measurementGrid" class="measurement-grid">
+              <div><span>A</span><strong>—</strong></div>
+              <div><span>B</span><strong>—</strong></div>
+              <div><span>Δt</span><strong>—</strong></div>
+              <div><span>ΔV</span><strong>—</strong></div>
+              <div><span>Signal</span><strong>—</strong></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="dock-card" open>
+          <summary>
+            <span>Baseline</span>
+            <span class="summary-value" id="baselineOutput">0 mV</span>
+          </summary>
+          <div class="dock-body">
+            <h2 id="baselineHeading">Known baseline</h2>
+
+            <div class="ideal-only">
+              <p class="muted">Declared 0 mV isoelectric baseline. Vertical measurements are defined by construction.</p>
+            </div>
+
+            <div class="clean-only">
+              <p class="muted">Reference estimated from LUDB cardiologist-delineated PR/TP isoelectric regions.</p>
+              <div id="cleanBaselineDetails" class="baseline-evidence"></div>
+            </div>
+
+            <div class="imperfect-only practice-shared">
+              <p class="muted">Choose a local reference only when it is physiologically defensible.</p>
+              <p class="muted adc-only">Stage 4 keeps the source machine units visible. For this ECG-ID record, 200 ADC ≈ 1 mV.</p>
+              <div class="button-row">
+                <button id="baselineZero">ADC zero</button>
+                <button id="baselineMedian">Visible median</button>
+                <button id="baselineFromA">Caliper A</button>
+              </div>
+              <label class="number-label" id="baselineInputLabel" for="baselineInput">Selected baseline (mV)</label>
+              <input id="baselineInput" type="number" step="1" value="0">
+              <div class="baseline-confidence">
+                <button id="baselineConfident" type="button" class="confidence-button active">Usable</button>
+                <button id="baselineUncertain" type="button" class="confidence-button">Uncertain</button>
+              </div>
+            </div>
+
+            <p id="baselineRealityText" class="baseline-status"></p>
+          </div>
+        </details>
+
+        <details class="dock-card clean-only">
+          <summary>
+            <span>Expert comparison</span>
+            <span class="summary-value">LUDB</span>
+          </summary>
+          <div class="dock-body">
+            <p class="muted">Manual calipers are compared with cardiologist-delineated interval boundaries. OPL does not move your endpoints.</p>
+            <button id="downloadLudbMeasurements" type="button">Download expert table</button>
+          </div>
+        </details>
+
+        <details class="dock-card biological-only">
+          <summary>
+            <span>R–R preview</span>
+            <span class="summary-value">timing</span>
+          </summary>
+          <div class="dock-body">
+            <p class="muted">Beat timing is a separate evidence problem from baseline-dependent morphology.</p>
+            <div id="rrBridgeStats" class="rr-stats"></div>
+          </div>
+        </details>
+      </aside>
+    </section>
+
+    <section class="drawer-stack" aria-label="Reference Lab drawers">
+      <details class="app-drawer" id="sourceDrawer">
+        <summary>
+          <span>
+            <strong>Source & teaching notes</strong>
+            <small id="provenanceSummary">OPL idealized teaching template · synthetic · 500 Hz</small>
+          </span>
+          <span class="drawer-chevron">⌄</span>
+        </summary>
+        <div class="drawer-body">
+          <div class="source-principle ideal-only">
+            <strong>Model first.</strong>
+            <span>Notation and the measurement ruler are unambiguous. This is a teaching model, not biological validation data.</span>
+          </div>
+          <div class="source-principle clean-only">
+            <strong>Then real physiology.</strong>
+            <span>A reproducibly selected LUDB Lead-II recording demonstrates that textbook-like morphology can occur in real biology.</span>
+          </div>
+          <div class="source-principle imperfect-only stage3-only">
+            <strong>Then uncertainty.</strong>
+            <span>ECG-ID preserves baseline and signal imperfections instead of forcing textbook certainty, while Stage 3 converts the signal to physical mV using the published source gain.</span>
+          </div>
+          <div class="source-principle adc-only">
+            <strong>Then the machine.</strong>
+            <span>Stage 4 revisits the same imperfect recording in source ADC counts so students can connect biosignal hardware units to physiological amplitude.</span>
+          </div>
+          <div class="source-principle practice-only">
+            <strong>Then independent practice.</strong>
+            <span>The learner sees a different real LUDB trace, chooses a baseline and places calipers before cardiologist annotations are revealed.</span>
+          </div>
+
+          <div class="ideal-only ideal-summary-drawer">
+            <div class="ideal-metrics">
+              <div><span>Rate</span><strong>75 bpm</strong></div>
+              <div><span>RR</span><strong>800 ms</strong></div>
+              <div><span>P</span><strong>100 ms</strong></div>
+              <div><span>PR</span><strong>160 ms</strong></div>
+              <div><span>QRS</span><strong>90 ms</strong></div>
+              <div><span>QT</span><strong>400 ms</strong></div>
+              <div><span>Baseline</span><strong>0 mV</strong></div>
+            </div>
+          </div>
+
+          <div class="clean-only">
+            <div id="cleanSelectionSummary" class="clean-selection-stats"></div>
+          </div>
+
+          <details id="provenanceDetails" class="nested-details">
+            <summary>Full provenance</summary>
+            <div id="provenanceGrid" class="provenance-grid" aria-live="polite"></div>
+          </details>
+
+          <div class="reasoning-rule">
+            <strong>Reasoning rule</strong>
+            <p>Idealized data explain what a measurement means. Real open data determine whether that measurement is defensible.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="app-drawer" id="controlsDrawer">
+        <summary>
+          <span>
+            <strong>View & measurement controls</strong>
+            <small>Window, annotations, waveform display and grid</small>
+          </span>
+          <span class="drawer-chevron">⌄</span>
+        </summary>
+        <div class="drawer-body controls-grid">
+          <div class="control-group imperfect-only">
+            <label for="waveformMode">Signal display</label>
+            <select id="waveformMode">
+              <option value="overlay">Raw + source filtered</option>
+              <option value="raw">Raw only</option>
+              <option value="filtered">Source filtered only</option>
+            </select>
+          </div>
+
+          <div class="control-group imperfect-only">
+            <label for="measurementSignal">Measure amplitude on</label>
+            <select id="measurementSignal">
+              <option value="raw">Raw ECG</option>
+              <option value="filtered">Source filtered ECG</option>
+            </select>
+          </div>
+
+          <div class="control-group adc-only">
+            <label for="verticalGrid">Vertical small box</label>
+            <select id="verticalGrid">
+              <option value="20" selected>20 ADC (~0.1 mV)</option>
+              <option value="50">50 ADC</option>
+              <option value="100">100 ADC</option>
+              <option value="200">200 ADC (~1 mV)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="windowLength">Window</label>
+            <select id="windowLength">
+              <option value="1">1 s</option>
+              <option value="2" selected>2 s</option>
+              <option value="5">5 s</option>
+              <option value="10">10 s</option>
+              <option value="20">20 s</option>
+            </select>
+          </div>
+
+          <div class="control-group grow">
+            <label for="windowStart">Window start <span id="windowStartLabel">0.0 s</span></label>
+            <input id="windowStart" type="range" min="0" max="4" step="0.002" value="0.1">
+          </div>
+
+          <label class="checkbox">
+            <input id="showAnnotations" type="checkbox" checked>
+            <span class="ideal-only">Notation</span>
+            <span class="clean-only">Cardiologist annotations</span>
+            <span class="imperfect-only">Source annotations</span>
+            <span class="practice-only">Expert annotations after reveal</span>
+          </label>
+        </div>
+      </details>
+
+      <details class="app-drawer" id="evidenceDrawer">
+        <summary>
+          <span>
+            <strong>Evidence & reproducibility</strong>
+            <small>Expert references, validation checks and source-derived outputs</small>
+          </span>
+          <span class="drawer-chevron">⌄</span>
+        </summary>
+        <div class="drawer-body">
+          <section class="reference-measurements clean-only">
+            <div class="reference-measurements-head">
+              <div>
+                <p class="section-kicker">CARDIOLOGIST REFERENCE</p>
+                <h2>LUDB interval reference</h2>
+                <p>Durations reconstructed directly from cardiologist annotation sample positions.</p>
+              </div>
+            </div>
+            <div id="ludbMeasurementTable" class="reference-measurement-table" aria-live="polite"></div>
+          </section>
+
+          <section class="validation-section imperfect-only" aria-labelledby="validation-heading">
+            <div class="validation-head">
+              <div>
+                <p class="section-kicker">REFERENCE VALIDATION</p>
+                <h2 id="validation-heading">ECG-ID source integrity</h2>
+              </div>
+              <div class="validation-score">
+                <strong id="validationPassed">—</strong>
+                <span id="validationTotal">checks</span>
+              </div>
+            </div>
+            <div id="validationChecks" class="validation-checks" aria-live="polite"></div>
+            <div class="button-row">
+              <button id="downloadValidation">Download validation report</button>
+            </div>
+          </section>
+
+          <div class="imperfect-only reality-rule compact-rule">
+            <span>Stable baseline</span><strong>time + relative amplitude</strong>
+            <span>Uncertain baseline</span><strong>time only; withhold amplitude</strong>
+          </div>
+        </div>
+      </details>
+
+      <details class="app-drawer" id="learningDrawer">
+        <summary>
+          <span>
+            <strong>Concept check</strong>
+            <small>Reasoning questions · optional</small>
+          </span>
+          <span class="drawer-chevron">⌄</span>
+        </summary>
+        <div class="drawer-body">
+          <section class="teaching-quiz" id="teachingQuiz" aria-labelledby="quiz-heading">
+            <div class="quiz-head">
+              <div>
+                <p class="section-kicker">CONCEPT CHECK</p>
+                <h2 id="quiz-heading">Check the reasoning</h2>
+              </div>
+              <div class="quiz-score"><span id="quizScore">0</span>/<span id="quizTotal">0</span></div>
+            </div>
+            <div id="quizQuestion" class="quiz-question"></div>
+            <div id="quizOptions" class="quiz-options"></div>
+            <p id="quizFeedback" class="quiz-feedback" aria-live="polite"></p>
+            <div class="quiz-actions">
+              <button type="button" id="quizNext">Next question</button>
+              <button type="button" id="quizReset">Restart</button>
+            </div>
+          </section>
+        </div>
+      </details>
+
+      <details class="app-drawer" id="filesDrawer">
+        <summary>
+          <span>
+            <strong>Offline, export & saved packages</strong>
+            <small>Download and keep the reference workflow</small>
+          </span>
+          <span class="drawer-chevron">⌄</span>
+        </summary>
+        <div class="drawer-body">
+          <div class="keep-actions">
+            <button id="saveOffline">Save real record offline</button>
+            <button id="exportPackage">Download current OPL package</button>
+            <label class="file-button">
+              Open saved package
+              <input id="importPackage" type="file" accept=".json,application/json">
+            </label>
+          </div>
+          <p id="keepStatus" class="status-line" aria-live="polite"></p>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span>Open-source · Decentralized · Reliable · Reproducible</span>
+    <span>Educational/research tool · not a diagnostic medical device</span>
+  </footer>
+
+  <script src="../../config.js"></script>
+  <script src="../../pwa.js"></script>
+  <script src="../../analytics.js"></script>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>

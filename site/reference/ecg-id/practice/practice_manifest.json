@@ -1,0 +1,89 @@
+{
+  "schema": "org.openphysiologylab.ecg-practice-manifest/v1",
+  "title": "OPL real-ECG practice bank",
+  "dataset": "Lobachevsky University Electrocardiography Database (LUDB)",
+  "dataset_version": "1.0.1",
+  "doi": "10.13026/eegm-h675",
+  "license": "Open Data Commons Attribution License v1.0",
+  "teaching_note": "Records are shown without cardiologist annotations until review. Source identity and attribution remain available at all times.",
+  "records": [
+    {
+      "id": "LUDB/119/LeadII",
+      "label": "Practice ECG A",
+      "file": "records/LUDB_119_LeadII.json",
+      "difficulty": "easier",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "119",
+      "difficulty_score": 0.03973728346599194
+    },
+    {
+      "id": "LUDB/58/LeadII",
+      "label": "Practice ECG B",
+      "file": "records/LUDB_58_LeadII.json",
+      "difficulty": "easier",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "58",
+      "difficulty_score": 0.08257553834866456
+    },
+    {
+      "id": "LUDB/166/LeadII",
+      "label": "Practice ECG C",
+      "file": "records/LUDB_166_LeadII.json",
+      "difficulty": "moderate",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "166",
+      "difficulty_score": 0.1053235040683989
+    },
+    {
+      "id": "LUDB/149/LeadII",
+      "label": "Practice ECG D",
+      "file": "records/LUDB_149_LeadII.json",
+      "difficulty": "challenge",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "149",
+      "difficulty_score": 0.10691870401764313
+    },
+    {
+      "id": "LUDB/194/LeadII",
+      "label": "Practice ECG E",
+      "file": "records/LUDB_194_LeadII.json",
+      "difficulty": "moderate",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "194",
+      "difficulty_score": 0.08296117650632961
+    },
+    {
+      "id": "LUDB/152/LeadII",
+      "label": "Practice ECG F",
+      "file": "records/LUDB_152_LeadII.json",
+      "difficulty": "challenge",
+      "sampling_rate_hz": 500.0,
+      "duration_seconds": 10.0,
+      "lead": "II",
+      "units": "mV",
+      "source_dataset": "LUDB",
+      "source_record": "152",
+      "difficulty_score": 0.11637181338954465
+    }
+  ]
+}

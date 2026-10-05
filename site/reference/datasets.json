@@ -1,0 +1,81 @@
+{
+  "schema": "org.openphysiologylab.reference-dataset-registry/v1",
+  "datasets": [
+    {
+      "id": "physionet-ecg-id-v1.0.0",
+      "title": "ECG-ID Database",
+      "repository": "PhysioNet",
+      "version": "1.0.0",
+      "doi": "10.13026/C2J01F",
+      "license": "Open Data Commons Attribution License v1.0",
+      "contributor": "Tatiana Lugovaya",
+      "modality": "ECG",
+      "current_opl_record": "Person_01/rec_1",
+      "acquisition": {
+        "lead": "I",
+        "sampling_rate_hz": 500,
+        "adc_resolution_bits": 12,
+        "duration_seconds": 20
+      },
+      "source_signals": [
+        "raw ECG channel",
+        "source-provided filtered ECG channel"
+      ],
+      "opl_roles": [
+        "raw-versus-source-filtered teaching",
+        "sampling/time-grid teaching",
+        "baseline-relative digital amplitude teaching",
+        "browser Reference Lab integration",
+        "classroom synchronization prototype"
+      ],
+      "annotation_status": "Automated R/T peak annotations supplied by the source; unaudited.",
+      "not_claimed": [
+        "cardiologist gold-standard waveform delineation",
+        "diagnostic validation",
+        "NPG Lite hardware voltage calibration"
+      ],
+      "provenance_manifest": "reference/ecg-id/manifest.json"
+    },
+    {
+      "id": "physionet-ludb-v1.0.1-clean-leadii",
+      "title": "Lobachevsky University Electrocardiography Database (LUDB)",
+      "repository": "PhysioNet",
+      "version": "1.0.1",
+      "doi": "10.13026/eegm-h675",
+      "license": "Open Data Commons Attribution License v1.0",
+      "modality": "12-lead ECG",
+      "current_opl_record": "119 / Lead II",
+      "acquisition": {
+        "lead": "II",
+        "sampling_rate_hz": 500,
+        "duration_seconds": 10,
+        "source_units": "mV"
+      },
+      "annotations": [
+        "manual P-wave peaks and boundaries",
+        "manual QRS peaks and boundaries",
+        "manual T-wave peaks and boundaries"
+      ],
+      "selection": {
+        "clinical_metadata_rule": "Sinus rhythm with no listed conduction abnormality, extrasystole, hypertrophy, pacing, ischemia, nonspecific repolarization abnormality, or other state.",
+        "candidate_count": 23,
+        "ranking": "Lead-II annotated-baseline stability, high-frequency noise, and predominantly positive textbook-like polarity.",
+        "selected_record": "119",
+        "selection_report": "reference/ecg-id/data/LUDB_clean_selection.json"
+      },
+      "opl_roles": [
+        "clean real ECG bridge after the synthetic teaching model",
+        "physical-mV caliper teaching on biological data",
+        "manual P/QRS/T delineation visualization",
+        "real isoelectric-reference teaching using cardiologist-delineated PR/TP regions"
+      ],
+      "not_claimed": [
+        "a universal normal ECG template",
+        "diagnostic validation",
+        "proof that all real ECGs should resemble this morphology",
+        "NPG Lite hardware calibration"
+      ],
+      "provenance_record": "reference/ecg-id/data/LUDB_clean_LeadII.json"
+    }
+  ]
+}

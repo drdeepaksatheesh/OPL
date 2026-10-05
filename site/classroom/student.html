@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173b57">
+  <title>OPL Classroom · Student</title>
+  <link rel="stylesheet" href="classroom.css">
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>OPL Classroom</h1>
+    <p>Student phone view</p>
+  </div>
+  <span class="badge" id="connectionBadge">Connecting…</span>
+</header>
+
+<main>
+  <section id="joinView" class="card join-box">
+    <h2>Join class</h2>
+    <p class="muted">Enter the code shown by your teacher. A name/roll code is optional in this prototype.</p>
+    <div class="stack" style="max-width:320px;margin:16px auto 0">
+      <input id="joinCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code">
+      <input id="participantLabel" type="text" maxlength="40" placeholder="Optional name / roll code">
+      <button id="joinButton" class="primary">Join</button>
+      <p id="joinStatus" class="status"></p>
+    </div>
+  </section>
+
+  <div id="classView" hidden>
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <span class="badge" id="phaseBadge">Waiting</span>
+          <h2 id="sessionTitle" style="margin:.5rem 0 0">ECG Reference Lab</h2>
+        </div>
+        <div class="muted" id="participantDisplay"></div>
+      </div>
+    </section>
+
+    <section id="testView" class="stack"></section>
+
+    <section id="teachingView" hidden class="stack">
+      <div class="section-banner">
+        <div class="muted">CURRENT TEACHING SECTION</div>
+        <h2 id="sectionTitle">Waiting for teacher…</h2>
+        <p id="sectionPrompt"></p>
+      </div>
+
+      <section class="card">
+        <canvas id="miniTrace" class="mini-trace" aria-label="Synchronized ECG teaching trace"></canvas>
+        <p class="muted">Simplified phone view. The teacher retains the full workstation controls.</p>
+      </section>
+
+      <section id="liveQuestionCard" class="card" hidden>
+        <h2>Live question</h2>
+        <div id="liveQuestion"></div>
+        <p id="liveFeedback" class="status"></p>
+      </section>
+
+      <section class="card">
+        <h2>Ask a doubt</h2>
+        <p class="muted">Your doubt is attached to the current teaching section and class timeline.</p>
+        <form id="doubtForm" class="doubt-form">
+          <textarea id="doubtText" maxlength="500" placeholder="Type your doubt…"></textarea>
+          <button class="primary" type="submit">Send doubt</button>
+          <p id="doubtStatus" class="status"></p>
+        </form>
+      </section>
+    </section>
+
+    <section id="closedView" class="card" hidden>
+      <h2>Session closed</h2>
+      <p>Your responses have been sent to the teacher laptop. You may close this page.</p>
+    </section>
+  </div>
+</main>
+<footer>Activity signals are used only as transparent classroom engagement proxies; OPL does not claim to measure attention.</footer>
+<script type="module" src="student.mjs"></script>
+</body>
+</html>

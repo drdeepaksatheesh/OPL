@@ -1,0 +1,74 @@
+name: Deploy OPL Reference Labs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "scripts/prepare_ecgid_reference.py"
+      - "scripts/verify_ecgid_reference.py"
+      - "scripts/build_reference_site.py"
+      - "software/OpenPhysiologyLab/assets/openphysiolab.png"
+      - ".github/workflows/deploy-reference-labs-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install reference-build dependencies
+        run: python -m pip install --upgrade "wfdb>=4.1,<5" "Pillow>=10,<12"
+
+      - name: Fetch frozen ECG-ID reference record
+        run: python scripts/prepare_ecgid_reference.py --person Person_01 --record rec_1
+
+      - name: Verify reference record
+        run: python scripts/verify_ecgid_reference.py
+
+      - name: Run Reference Lab calculation tests
+        run: node --test site/tests/reference-lab-core.test.mjs
+
+      - name: Build static PWA
+        run: python scripts/build_reference_site.py
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/opl-site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

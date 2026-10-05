@@ -104,8 +104,10 @@ def detect_general_peaks(x, y, fs, min_distance_seconds=0.25):
 
     y_centered = y - np.median(y)
     y_std = float(np.std(y_centered))
+    y_ptp = float(np.ptp(y_centered))
+    scale_epsilon = max(np.finfo(float).eps, y_ptp * 1e-12)
 
-    if y_std <= 1e-9:
+    if not np.isfinite(y_std) or y_std <= scale_epsilon:
         return {
             "peaks": np.array([], dtype=int),
             "polarity": "flat",
@@ -114,7 +116,7 @@ def detect_general_peaks(x, y, fs, min_distance_seconds=0.25):
         }
 
     min_distance = max(1, int(min_distance_seconds * fs))
-    prominence = max(y_std * 0.8, 1.0)
+    prominence = max(y_std * 0.8, scale_epsilon)
 
     positive_peaks, positive_props = find_peaks(
         y_centered,
@@ -245,8 +247,14 @@ def detect_ecg_r_peaks(
     y_ptp = float(np.ptp(y_centered))
     y_std = float(np.std(y_centered))
     y_mad = _robust_mad(y_centered)
+    scale_epsilon = max(np.finfo(float).eps, y_ptp * 1e-12)
 
-    if y_ptp <= 1e-9 or y_std <= 1e-9:
+    if (
+        not np.isfinite(y_ptp)
+        or not np.isfinite(y_std)
+        or y_ptp <= scale_epsilon
+        or y_std <= scale_epsilon
+    ):
         return {
             "peaks": np.array([], dtype=int),
             "polarity": "flat",
@@ -260,8 +268,10 @@ def detect_ecg_r_peaks(
     min_distance_seconds = max(min_rr_from_max_hr, preferred_min_rr_seconds)
     min_distance_samples = max(1, int(round(min_distance_seconds * fs)))
 
-    # Robust noise estimate.
-    robust_noise = max(y_mad * 1.4826, y_std * 0.35, 1.0)
+    # Robust noise estimate. Keep this relative to the signal scale so that
+    # identical ECGs expressed in V, mV, microvolts, or ADC counts behave
+    # identically.
+    robust_noise = max(y_mad * 1.4826, y_std * 0.35, scale_epsilon)
 
     # Explicit QRS thresholds.
     minimum_height_threshold = max(
@@ -348,8 +358,8 @@ def detect_ecg_r_peaks(
         median_height = float(np.median(detection_heights))
         median_prominence = float(np.median(prominences)) if len(prominences) > 0 else 0.0
 
-        height_ratio = float(median_height / max(y_ptp, 1.0))
-        prominence_ratio = float(median_prominence / max(y_ptp, 1.0))
+        height_ratio = float(median_height / max(y_ptp, scale_epsilon))
+        prominence_ratio = float(median_prominence / max(y_ptp, scale_epsilon))
 
         # Physiological plausibility.
         hr_plausible = min_hr_bpm <= hr_count <= max_hr_bpm
@@ -484,9 +494,9 @@ def detect_ecg_r_peaks(
             neg_h = negative_best["median_peak_height"]
 
             # If one polarity has clearly stronger repeated QRS height, prefer it.
-            if pos_h >= 1.20 * max(neg_h, 1e-9):
+            if pos_h >= 1.20 * max(neg_h, scale_epsilon):
                 best = positive_best
-            elif neg_h >= 1.20 * max(pos_h, 1e-9):
+            elif neg_h >= 1.20 * max(pos_h, scale_epsilon):
                 best = negative_best
             else:
                 best = positive_best if pos_q >= neg_q else negative_best
