@@ -1,0 +1,80 @@
+name: ECG practice bank
+
+on:
+  push:
+    branches:
+      - publication-series
+    paths:
+      - "validation/reference_ecg/build_ludb_practice_pack.py"
+      - ".github/workflows/ecg-practice-pack.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ecg-practice-bank-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-practice-bank:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout publication branch
+        uses: actions/checkout@v4
+        with:
+          ref: publication-series
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install WFDB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r validation/reference_ecg/requirements.txt
+
+      - name: Download and build LUDB practice bank
+        run: |
+          rm -rf site/reference/ecg-id/practice
+          python validation/reference_ecg/build_ludb_practice_pack.py \
+            --output site/reference/ecg-id/practice
+
+      - name: Sanity-check generated bank
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          root=pathlib.Path("site/reference/ecg-id/practice")
+          manifest=json.loads((root/"practice_manifest.json").read_text())
+          assert len(manifest["records"]) == 6
+          for item in manifest["records"]:
+              data=json.loads((root/item["file"]).read_text())
+              assert data["units"][0] == "mV"
+              assert data["sampling_rate_hz"] == 500
+              assert len(data["signals"]["raw"]) == 5000
+              assert any(a.get("wave")=="P" for a in data["annotations"])
+              assert any(a.get("wave")=="QRS" for a in data["annotations"])
+              assert any(a.get("wave")=="T" for a in data["annotations"])
+          print("Practice bank OK:", ", ".join(x["label"] for x in manifest["records"]))
+          PY
+
+      - name: Upload practice bank artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opl-ludb-ecg-practice-bank
+          path: site/reference/ecg-id/practice
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit generated open-data practice bank
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/reference/ecg-id/practice
+          if git diff --cached --quiet; then
+            echo "Practice bank unchanged."
+          else
+            git commit -m "practice: refresh bundled LUDB ECG exercise bank"
+            git push origin HEAD:publication-series
+          fi
