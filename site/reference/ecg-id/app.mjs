@@ -1045,8 +1045,10 @@ function renderMeasurementAssist() {
 
     el.measurementAssist.innerHTML =
       "<strong>" + escapeHtml(m.label) + "</strong> · measured " +
-      escapeHtml(String(roundNumber(m.measured_ms, 1))) + " ms · model " +
-      escapeHtml(String(roundNumber(m.expected_ms, 1))) + " ms · <span class=\"" + cls + "\">" +
+      escapeHtml(String(roundNumber(m.measured_ms, 1))) + " ms (" +
+      escapeHtml(String(roundNumber(m.measured_ms/40, 2))) + " small boxes) · model " +
+      escapeHtml(String(roundNumber(m.expected_ms, 1))) + " ms (" +
+      escapeHtml(String(roundNumber(m.expected_ms/40, 2))) + " boxes) · <span class=\"" + cls + "\">" +
       escapeHtml(difference) + " model</span>. " +
       "This is manual placement feedback; OPL has not moved your calipers.";
     return;
@@ -1079,15 +1081,156 @@ function renderMeasurementAssist() {
 
     el.measurementAssist.innerHTML =
       "<strong>" + escapeHtml(m.label) + "</strong> · your calipers " +
-      escapeHtml(String(roundNumber(m.measured_ms,1))) + " ms · cardiologist reference " +
-      escapeHtml(String(roundNumber(m.reference_ms,1))) + " ms · <span class=\"" + cls + "\">" +
+      escapeHtml(String(roundNumber(m.measured_ms,1))) + " ms (" +
+      escapeHtml(String(roundNumber(m.measured_ms/40,2))) + " small boxes) · cardiologist reference " +
+      escapeHtml(String(roundNumber(m.reference_ms,1))) + " ms (" +
+      escapeHtml(String(roundNumber(m.reference_ms/40,2))) + " boxes) · <span class=\"" + cls + "\">" +
       escapeHtml(errorText) + "</span>. " +
       "Endpoint differences: A " + escapeHtml(formatSigned(roundNumber(m.start_error_ms,1))) +
       " ms, B " + escapeHtml(formatSigned(roundNumber(m.end_error_ms,1))) + " ms.";
     return;
   }
 
+  if (state.sourceMode === "practice") {
+    const item = practiceManifestItem();
+    if (!state.practiceReveal) {
+      if (a == null && b == null) {
+        el.measurementAssist.innerHTML =
+          "<strong>Practice:</strong> choose a defensible baseline, then drag A→B around the interval you want to measure. Time is shown in ms and 40-ms small boxes; amplitude is shown in mV and 0.1-mV vertical boxes after baseline selection.";
+      } else if (a == null || b == null) {
+        el.measurementAssist.innerHTML =
+          "<strong>Practice:</strong> first caliper placed. Complete A→B before revealing the cardiologist reference.";
+      } else {
+        el.measurementAssist.innerHTML =
+          "<strong>Practice:</strong> measurement recorded on " + escapeHtml(item?.label || "this ECG") +
+          ". Decide whether the boundaries and baseline are defensible, then reveal the expert reference when ready.";
+      }
+      return;
+    }
+
+    if (a == null || b == null) {
+      el.measurementAssist.innerHTML =
+        "<strong>Expert revealed:</strong> cardiologist boundaries are now visible. Place A and B to compare your measurement.";
+      return;
+    }
+    const m = interpretLudbCalipers(state.record, a, b, 40).measurement;
+    if (!m) {
+      el.measurementAssist.innerHTML =
+        "<strong>Expert revealed:</strong> this A/B pair does not fall within 40 ms of both endpoints of a recognized LUDB interval.";
+      return;
+    }
+    const targetMismatch = state.practiceTask !== "free" && m.key !== state.practiceTask;
+    el.measurementAssist.innerHTML =
+      "<strong>" + escapeHtml(m.label) + "</strong> · your calipers " +
+      escapeHtml(String(roundNumber(m.measured_ms,1))) + " ms (" + escapeHtml(String(roundNumber(m.measured_ms/40,2))) +
+      " small boxes) · expert " + escapeHtml(String(roundNumber(m.reference_ms,1))) + " ms · error " +
+      escapeHtml(formatSigned(roundNumber(m.error_ms,1))) + " ms" +
+      (targetMismatch ? ' · <span class="warn">this is not the selected practice target</span>' : "") + ".";
+    return;
+  }
+
   el.measurementAssist.innerHTML = "";
+}
+
+function practiceManifestItem() {
+  return (state.practiceManifest?.records || []).find(item => item.id === state.practiceRecordId) || null;
+}
+
+function renderPracticePicker() {
+  if (!el.practiceRecordList) return;
+  const items = state.practiceManifest?.records || [];
+  if (!items.length) {
+    el.practiceRecordList.innerHTML = '<p class="muted">Practice bank unavailable in this build.</p>';
+    return;
+  }
+  el.practiceRecordList.innerHTML = items.map(item =>
+    '<button type="button" class="practice-record-button ' + (item.id === state.practiceRecordId ? 'active' : '') + '" data-practice-id="' +
+    escapeHtml(item.id) + '"><strong>' + escapeHtml(item.label) + '</strong><small>' +
+    escapeHtml(item.difficulty) + ' · Lead II · 10 s · 500 Hz</small></button>'
+  ).join('');
+  el.practiceRecordList.querySelectorAll('[data-practice-id]').forEach(button => {
+    button.addEventListener('click', () => loadPracticeRecord(button.dataset.practiceId));
+  });
+}
+
+function loadPracticeRecord(id) {
+  const record = state.practiceRecords.get(id);
+  if (!record) return;
+  if (state.sourceMode !== 'practice') state.storyReturnMode = state.sourceMode;
+  state.practiceRecordId = id;
+  state.practiceRecord = record;
+  state.practiceReveal = false;
+  switchSource('practice', {restore:false});
+  scrollToLab();
+}
+
+function resetPracticeAttempt() {
+  if (state.sourceMode !== 'practice') return;
+  state.calipers = {a:null,b:null};
+  state.nextCaliper = 'a';
+  state.baseline = 0;
+  state.baselineStatus = 'unselected';
+  state.practiceReveal = false;
+  state.showAnnotations = false;
+  syncControlsFromState();
+  renderAll();
+  persistSession();
+}
+
+function renderPracticeReview() {
+  if (!el.practiceReview || !el.practiceStatus || !el.practiceReveal) return;
+  if (state.sourceMode !== 'practice' || !state.practiceRecord) {
+    el.practiceReview.hidden = true;
+    el.practiceStatus.textContent = 'Choose Practice to work through unfamiliar real ECGs.';
+    return;
+  }
+
+  const item = practiceManifestItem();
+  const taskLabel = el.practiceTask?.selectedOptions?.[0]?.textContent || 'Free measurement';
+  const baselineState = state.baselineStatus === 'unselected'
+    ? 'baseline not assigned'
+    : state.baselineStatus === 'uncertain'
+      ? 'baseline marked uncertain'
+      : 'baseline ' + formatSigned(roundNumber(state.baseline,3)) + ' mV';
+
+  if (!state.practiceReveal) {
+    el.practiceReveal.textContent = 'Reveal expert';
+    el.practiceReview.hidden = true;
+    el.practiceStatus.innerHTML = '<strong>' + escapeHtml(item?.label || 'Practice ECG') + '</strong> · ' +
+      escapeHtml(item?.difficulty || '') + ' · target: ' + escapeHtml(taskLabel) + ' · ' + escapeHtml(baselineState) +
+      '. Expert annotations and source record ID are hidden.';
+    return;
+  }
+
+  el.practiceReveal.textContent = 'Hide expert';
+  el.practiceReview.hidden = false;
+  const expertBaseline = Number(state.practiceRecord.recommended_baseline_mV);
+  const baselineError = state.baselineStatus === 'selected'
+    ? state.baseline - expertBaseline
+    : null;
+  const summaries = summarizeLudbReferenceIntervals(state.practiceRecord);
+  const target = state.practiceTask === 'free' ? null : summaries.find(row => row.key === state.practiceTask);
+  const interpreted = (state.calipers.a != null && state.calipers.b != null)
+    ? interpretLudbCalipers(state.practiceRecord, state.calipers.a, state.calipers.b, 40).measurement
+    : null;
+
+  let measurementHtml = '<span class="warn">No recognized expert interval at the current A/B pair.</span>';
+  if (interpreted) {
+    const boxes = interpreted.measured_ms / 40;
+    measurementHtml = '<strong>' + escapeHtml(interpreted.label) + '</strong>: your calipers ' +
+      escapeHtml(String(roundNumber(interpreted.measured_ms,1))) + ' ms (' + escapeHtml(String(roundNumber(boxes,2))) +
+      ' small boxes) · expert ' + escapeHtml(String(roundNumber(interpreted.reference_ms,1))) + ' ms · error ' +
+      escapeHtml(formatSigned(roundNumber(interpreted.error_ms,1))) + ' ms.';
+  }
+
+  el.practiceReview.innerHTML =
+    '<strong>Expert revealed</strong> · LUDB record ' + escapeHtml(item?.source_record || state.practiceRecord.provenance?.record || '—') +
+    ' · Lead II.<br>' +
+    'Cardiologist-derived PR/TP baseline: ' + escapeHtml(formatSigned(roundNumber(expertBaseline,4))) + ' mV' +
+    (baselineError == null ? ' · your baseline was not finalized.' : ' · your baseline error ' + escapeHtml(formatSigned(roundNumber(baselineError,4))) + ' mV (' + escapeHtml(formatSigned(roundNumber(baselineError/0.1,2))) + ' vertical boxes).') +
+    (target ? '<br>Target reference across beats: median ' + escapeHtml(String(roundNumber(target.median_ms,1))) + ' ms (' + escapeHtml(String(roundNumber(target.median_ms/40,2))) + ' small boxes), range ' + escapeHtml(String(roundNumber(target.min_ms,1))) + '–' + escapeHtml(String(roundNumber(target.max_ms,1))) + ' ms.' : '') +
+    '<br>' + measurementHtml;
+  el.practiceStatus.textContent = 'Expert reference is visible. Hide it or reset the attempt to practice again without annotations.';
 }
 
 function renderLudbReferenceTable() {
@@ -1114,12 +1257,16 @@ function cursorText(sample, value) {
 
   if (state.sourceMode === "ideal") {
     const delta = value - IDEAL_ECG_SPEC.baseline_mV;
-    return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
+    return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV · " + formatSigned(roundNumber(delta/0.1,2)) + " vertical boxes";
   }
 
-  if (state.sourceMode === "clean") {
+  if (state.sourceMode === "clean" || state.sourceMode === "real" || state.sourceMode === "practice") {
+    if (state.baselineStatus === "uncertain" || state.baselineStatus === "unselected") {
+      return roundNumber(time, 2) + " ms · amplitude withheld until baseline is chosen";
+    }
     const delta = value - state.baseline;
-    return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV";
+    return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 3)) + " mV · " +
+      formatSigned(roundNumber(delta/0.1, 2)) + " vertical boxes";
   }
 
   if (state.baselineStatus === "uncertain") {
@@ -1127,11 +1274,36 @@ function cursorText(sample, value) {
   }
 
   const delta = deltaAdc(value, state.baseline);
-  return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 2)) + " ΔADC";
+  const gain = derivedCountsPerMv(state.record);
+  const mv = gain ? delta / gain : null;
+  return roundNumber(time, 2) + " ms · " + formatSigned(roundNumber(delta, 2)) + " ADC" +
+    (mv == null ? "" : " · " + formatSigned(roundNumber(mv, 3)) + " mV · " + formatSigned(roundNumber(mv/0.1,2)) + " vertical boxes");
+}
+
+function formatTimeMeasurement(sampleA,sampleB,fs) {
+  const ms = Math.abs(durationMs(sampleA,sampleB,fs));
+  const boxes = ms / 40;
+  return roundNumber(ms,2) + " ms · " + roundNumber(boxes,2) + " small boxes";
+}
+
+function formatVoltageMeasurement(valueA,valueB) {
+  if (state.baselineStatus === "uncertain" || state.baselineStatus === "unselected") {
+    return "withheld until baseline is usable";
+  }
+  if (state.sourceMode === "adc") {
+    const adc = Number(valueB) - Number(valueA);
+    const gain = derivedCountsPerMv(state.record);
+    if (!gain) return formatSigned(roundNumber(adc,2)) + " ADC";
+    const mv = adc / gain;
+    return formatSigned(roundNumber(adc,2)) + " ADC · " + formatSigned(roundNumber(mv,3)) + " mV · " +
+      formatSigned(roundNumber(mv/0.1,2)) + " small boxes";
+  }
+  const mv = Number(valueB) - Number(valueA);
+  return formatSigned(roundNumber(mv,3)) + " mV · " + formatSigned(roundNumber(mv/0.1,2)) + " small boxes";
 }
 
 function setBaseline(value, status="selected") {
-  if (state.sourceMode !== "real" || !Number.isFinite(Number(value))) return;
+  if (!(state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice") || !Number.isFinite(Number(value))) return;
   state.baseline = Number(value);
   state.baselineStatus = status;
   persistSession();
@@ -1141,7 +1313,7 @@ function setBaseline(value, status="selected") {
 }
 
 function setBaselineStatus(status) {
-  if (state.sourceMode !== "real") return;
+  if (!(state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice")) return;
   state.baselineStatus = status === "uncertain" ? "uncertain" : "selected";
   persistSession();
   renderMeasurements();
@@ -1150,7 +1322,7 @@ function setBaselineStatus(status) {
 }
 
 function useVisibleMedianBaseline() {
-  if (state.sourceMode !== "real" || !state.record) return;
+  if (!(state.sourceMode === "real" || state.sourceMode === "adc" || state.sourceMode === "practice") || !state.record) return;
   const [start,end] = visibleSampleRange();
   setBaseline(median(activeSignal().slice(start,end)), "selected");
 }
@@ -1174,11 +1346,26 @@ function renderBaselineReality() {
   }
 
   const uncertain = state.baselineStatus === "uncertain";
-  el.baselineConfident.classList.toggle("active", !uncertain);
+  const unselected = state.baselineStatus === "unselected";
+  el.baselineConfident.classList.toggle("active", !uncertain && !unselected);
   el.baselineUncertain.classList.toggle("active", uncertain);
-  el.baselineRealityText.textContent = uncertain
-    ? "Baseline marked uncertain: vertical amplitude is deliberately withheld. Time measurements remain available."
-    : "Local baseline accepted for this view: vertical values are reported relative to the selected ADC reference, not as calibrated input mV.";
+  if (state.sourceMode === "practice") {
+    el.baselineRealityText.textContent = unselected
+      ? "Baseline not yet assigned. Time measurements work now; choose a baseline before interpreting amplitude in mV or vertical boxes."
+      : uncertain
+        ? "You marked the baseline uncertain: vertical amplitude is deliberately withheld. Time and horizontal box measurements remain available."
+        : state.practiceReveal
+          ? "Your baseline is shown against the hidden cardiologist-derived PR/TP reference in the Practice review above."
+          : "Your baseline is active. Amplitudes are now reported in mV and 0.1-mV vertical-box units; expert reference remains hidden.";
+  } else if (state.sourceMode === "real") {
+    el.baselineRealityText.textContent = uncertain
+      ? "Baseline marked uncertain: vertical amplitude is deliberately withheld. Time measurements remain available."
+      : "Local baseline accepted for this view: vertical values are reported in physical mV, derived from the known ECG-ID ADC→mV conversion.";
+  } else {
+    el.baselineRealityText.textContent = uncertain
+      ? "Baseline marked uncertain: vertical amplitude is deliberately withheld. Time measurements remain available."
+      : "Local baseline accepted for this view: vertical values are reported relative to the selected ADC reference, not as calibrated input mV.";
+  }
 }
 
 function renderCleanSelection() {
@@ -1245,7 +1432,7 @@ function renderRrBridge() {
 
   const mean = rr.length ? rr.reduce((a,b)=>a+b,0)/rr.length : NaN;
   const approxHr = Number.isFinite(mean) && mean > 0 ? 60000/mean : NaN;
-  const markerLabel = state.sourceMode === "clean"
+  const markerLabel = (state.sourceMode === "clean" || state.sourceMode === "practice")
     ? "Manual QRS-peak markers"
     : "Source automated R markers";
 
@@ -1271,7 +1458,13 @@ function activeSignal() {
 function signalLabel() {
   if (state.sourceMode === "ideal") return "Ideal synthetic ECG";
   if (state.sourceMode === "clean") return "LUDB real Lead II · physical mV";
-  return state.measurementSignal === "raw" ? "Raw ECG" : "Source filtered ECG";
+  if (state.sourceMode === "practice") return "Practice real Lead II · physical mV";
+  if (state.sourceMode === "real") {
+    return state.measurementSignal === "raw"
+      ? "Imperfect real ECG · physical mV"
+      : "Source filtered ECG · physical mV";
+  }
+  return state.measurementSignal === "raw" ? "Raw ECG · ADC" : "Source filtered ECG · ADC";
 }
 
 function signalIndex() {
@@ -1303,10 +1496,10 @@ function syncWindowControls() {
 
 function updateRuler() {
   if (!el.rulerSmallBox || !el.rulerLargeBox) return;
-  if (state.sourceMode === "real") {
+  if (state.sourceMode === "adc") {
     const small = Number(state.verticalGridAdc);
-    el.rulerSmallBox.textContent = "40 ms × " + small + " ΔADC";
-    el.rulerLargeBox.textContent = "200 ms × " + (small * 5) + " ΔADC";
+    el.rulerSmallBox.textContent = "40 ms × " + small + " ADC";
+    el.rulerLargeBox.textContent = "200 ms × " + (small * 5) + " ADC";
   } else {
     el.rulerSmallBox.textContent = "40 ms × 0.1 mV";
     el.rulerLargeBox.textContent = "200 ms × 0.5 mV";
@@ -1314,9 +1507,7 @@ function updateRuler() {
 }
 
 function verticalSmallBoxValue() {
-  return (state.sourceMode === "ideal" || state.sourceMode === "clean")
-    ? 0.1
-    : state.verticalGridAdc;
+  return state.sourceMode === "adc" ? state.verticalGridAdc : 0.1;
 }
 
 function updateGridLabel() {
@@ -1324,8 +1515,14 @@ function updateGridLabel() {
     el.gridScale.textContent = "ECG paper: square boxes · 40 ms × 0.1 mV (synthetic)";
   } else if (state.sourceMode === "clean") {
     el.gridScale.textContent = "ECG paper: square boxes · 40 ms × 0.1 mV";
+  } else if (state.sourceMode === "real") {
+    el.gridScale.textContent = "ECG paper: square boxes · 40 ms × 0.1 mV (derived from known ADC→mV conversion)";
+  } else if (state.sourceMode === "practice") {
+    el.gridScale.textContent = "Practice ECG paper: square boxes · 40 ms × 0.1 mV";
   } else {
-    el.gridScale.textContent = "Square display boxes · 40 ms × " + state.verticalGridAdc + " ΔADC";
+    const gain = derivedCountsPerMv(state.record);
+    const approxMv = gain ? roundNumber(state.verticalGridAdc / gain, 3) : null;
+    el.gridScale.textContent = "Machine view: square boxes · 40 ms × " + state.verticalGridAdc + " ADC" + (approxMv != null ? " (~" + approxMv + " mV)" : "");
   }
 }
 
