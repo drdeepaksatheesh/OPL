@@ -1,6 +1,6 @@
 # First authentic digital animal-physiology recording: SGAMP a1t18
 
-**Status:** Original record **source-identified** and header/hash publication verified. Full biological waveform conversion is **not claimed successful** until the automated acquisition workflow downloads and validates the original master bytes. Until then, only tested importer code exists locally.
+**Status (2026-10-11):** An unmodified binary original was successfully acquired in GitHub Actions run 38084852762 and passed both original SHA-256 hashes, WFDB initial-value and checksum checks. Downloaded Actions artifact 11682495030 was independently inspected and physical-scale CSVs cross-checked against the native 16-bit ADC bytes. A 38-ms original signal excerpt is bundled for browser teaching. **Independent expert interpretation/educational validation remain pending.**
 
 ## Actual original source
 
@@ -60,4 +60,4 @@ If any file hash, header layout, sample count, first sample or channel checksum 
 4. Record the original DOI, file hashes and conversion procedure alongside any derived measurement.
 5. Write a short explanation of ADC calibration, baseline and why invented normalization would be scientifically unacceptable.
 
-**Not completed:** independent visual examination of biological waveform, cross-check against published figures, peer-reviewed answer key and third-party data publication/long-term archival. The workflow produces a 30-day CI artifact, not a permanent dataset repository. Keep a separate immutable archive with hashes once acquisition succeeds.
+**Not completed:** full publication/protocol figure cross-check, independent faculty-reviewed answer key, validated teaching outcomes, and permanent mirroring of all original source masters. The original file remains permanently available at PhysioNet with a stable DOI; GitHub Actions artifacts expire. The workflow produces a 30-day CI artifact, not a permanent dataset repository. Keep a separate immutable archive with hashes once acquisition succeeds.
