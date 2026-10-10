@@ -1,0 +1,28 @@
+name: Experimental Physiology QA
+on:
+  pull_request:
+    paths:
+      - 'modules/experimental-physiology/**'
+      - '.github/workflows/experimental-physiology-ci.yml'
+  push:
+    branches:
+      - feature/experimental-physiology-v0.1
+    paths:
+      - 'modules/experimental-physiology/**'
+      - '.github/workflows/experimental-physiology-ci.yml'
+permissions:
+  contents: read
+jobs:
+  scientific-metadata:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: modules/experimental-physiology
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate sources and experiment mappings
+        run: python3 scripts/validate_repository.py
+      - name: Test import, integrity and unsafe input rejection
+        run: python3 -m unittest discover -s tests -v
+      - name: Validate JavaScript parsing
+        run: node --check web/app.js
