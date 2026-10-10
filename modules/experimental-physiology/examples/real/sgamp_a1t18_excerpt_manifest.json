@@ -1,0 +1,40 @@
+{
+  "data_class": "VERIFIED_EXCERPT_FROM_AUTHENTIC_ORIGINAL",
+  "source": "PhysioNet SGAMP v1.0.0",
+  "record_id": "a1t18",
+  "source_url": "https://physionet.org/content/sgamp/1.0.0/",
+  "source_doi": "10.13026/C25C73",
+  "source_licence": "ODC-BY 1.0",
+  "source_authors": "Paydarfar D, Forger DB, Clay JR",
+  "original_master_sha256": "d74534b5d67d7f582694e597e4d4c86adccfdb1f4597379af45323059cafffb9",
+  "original_header_sha256": "9dd10bf0703219b08be82f69444d25ae9e4c81f5f419f998b422c9ab72f66e0c",
+  "source_sampling_frequency_hz": 125000,
+  "excerpt_time_ms": [
+    992.0,
+    1030.0
+  ],
+  "excerpt_sample_indices_inclusive": [
+    124000,
+    128750
+  ],
+  "processing": "Contiguous 4751-sample window from validated source CSVs; no filtering, interpolation, display inversion or current DC-offset subtraction; inherited original physical scale",
+  "limitations": [
+    "The stimulus current may contain instrumental DC offset.",
+    "Upstream source and raw unchanged originals are retained separately in a CI artifact and source archive.",
+    "Automated SHA-256 verification of these excerpt bytes occurs in the browser before labeling them VERIFIED."
+  ],
+  "channels": {
+    "Vmembrane": {
+      "file": "sgamp_a1t18_Vmembrane_992_1030ms.csv",
+      "unit": "mV",
+      "sha256": "bfb11ac233cd9496cf07fdbda4a89e20d9dbe78f37cdb090942a2f3414ddbce2",
+      "sample_count": 4751
+    },
+    "Istim": {
+      "file": "sgamp_a1t18_Istim_992_1030ms.csv",
+      "unit": "uA/cm^2",
+      "sha256": "30b0095943d8320cba49d73dc7dd24df8000527982db97cf4fb1d9bd82a8b7c9",
+      "sample_count": 4751
+    }
+  }
+}
