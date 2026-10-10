@@ -1,0 +1,45 @@
+name: Experimental Physiology - real SGAMP waveform verification
+on:
+  pull_request:
+    paths:
+      - 'modules/experimental-physiology/scripts/ingest_sgamp.py'
+      - 'modules/experimental-physiology/tests/test_sgamp.py'
+      - 'modules/experimental-physiology/docs/SGAMP_FIRST_RECORD.md'
+      - '.github/workflows/experimental-physiology-sgamp.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acquire-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Python verification (offline fixtures)
+        run: python -m unittest discover -s modules/experimental-physiology/tests -p 'test_sgamp.py' -v
+      - name: Download original PhysioNet binary and independently verify full waveform
+        run: |
+          python modules/experimental-physiology/scripts/ingest_sgamp.py \
+            --record a1t18 --output "${RUNNER_TEMP}/sgamp_a1t18_verified"
+      - name: Record verified signal details
+        run: |
+          python - <<'PY'
+          import os, json, pathlib
+          file=pathlib.Path(os.environ['RUNNER_TEMP'])/'sgamp_a1t18_verified/a1t18_manifest.json'
+          obj=json.loads(file.read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('## Authenticated original biological signal\n\n')
+              f.write('**Source:** PhysioNet SGAMP v1.0.0, pulse trial `a1t18`  \n')
+              f.write('**Integrity:** SHA-256 header/data, first sample, 16-bit checksums verified  \n')
+              f.write(f"**Samples:** {obj['sample_count']:,}, rate {obj['sampling_rate_hz']:,.0f} Hz  \n")
+              f.write('**Channels:** separate calibrated membrane mV and stimulus µA/cm²; DC offset left as acquired  \n')
+              f.write('**Caution:** physiological interpretation and learner review still pending.\n')
+          PY
+      - name: Preserve originals, converted waveforms, and provenance as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sgamp-a1t18-verified-source-and-derived
+          path: ${{ runner.temp }}/sgamp_a1t18_verified/
+          retention-days: 30
+          if-no-files-found: error

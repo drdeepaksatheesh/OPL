@@ -1,0 +1,10 @@
+{
+  "id":"isolated-intestine","title":"Isolated intestinal smooth muscle: spontaneous contractions and intervention","domain":"Visceral physiology","source_ids":["rabbit-jejunum-2021"],
+  "goals":["Distinguish baseline tone, contraction amplitude and frequency","Identify intervention and washing intervals","Explain why mechanical transducer range and recording drift matter","Compare the response and recovery from a verified organ-bath tracing"],
+  "sample_preparation":"Rabbit jejunum as described by original study; not an instruction to perform new animal work",
+  "minimum_channels":["contractile force or displacement","drug intervention annotations"],
+  "metadata_required":["force or displacement units","time base","bath medium and conditions","compound identity and concentration","intervention and wash timing"],
+  "tasks":["Mark three spontaneous contraction peaks","State whether amplitude or basal tone changes in the published example","Explain why a dose–response bar plot cannot substitute for the original temporal tracing"],
+  "interpretation_warning":"Figure access is not permission to create a digitized or edited public copy. A candidate raw record with clear reuse rights is still needed.",
+  "state":"restricted-figure-only"
+}
