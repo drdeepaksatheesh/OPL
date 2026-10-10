@@ -1,6 +1,6 @@
 # OPL Experimental Physiology — pilot staging branch
 
-**Status: initial source and governance records only.** The complete tested v0.1 local prototype (viewer, code, CSV ingestion, four teaching lesson files, plus tests) is being staged separately for review before the rest of the module is committed. **No third-party waveform data is hosted in this branch.**
+**Status: pilot in review.** [Launch the standalone, dependency-free lab](lab.html) by downloading the HTML file, or view its source. The review branch includes a linked historical image viewer, an explicitly synthetic interactive demo, local CSV import, two cursors and source attribution. The more complete v0.2 local development bundle also contains teaching specifications, a metadata validator, a CSV ingestion script and tests. **No third-party raw waveform data are hosted here yet.**
 
 ## Mission
 
@@ -33,3 +33,16 @@ See [SOURCE_STARTERS.md](SOURCE_STARTERS.md). They are discovery records, **not 
 A waveform becomes a public teaching record only with original file, source attribution and version, proper reuse permission, SHA-256 checksum, physical time/value calibration or explicit known limits, figure/caption context and scientific review.
 
 Code inherits the parent OPL GPL-3.0 project licence; third-party data retain their own licences.
+
+
+## First usable entry point — authentic source scans
+
+Open [the browser lab](lab.html). Choose one of the frog-heart scans (2013, 2017) or the historical Marey frog-muscle figure (1892); select "View original image". These images are displayed from Wikimedia Commons with inline attribution. The physical force and time calibration of these scans is **unverified**; zoom is display magnification only. The numerical caliper demonstration is labelled **synthetic**; imported CSV is labelled **unverified**.
+
+## v0.2 review milestones
+
+- Standalone HTML learner on the review branch with no third-party code dependency or telemetry.
+- Detailed local build has 8 source records and 5 mapped exercises, 5 passing ingestion tests, a verified desktop/mobile layout under controlled headless-browser testing, and image-linked sources.
+- Remaining: acquire independently verified original binary master(s) and prove gain, scale, polarity and sample rate; complete rights review and reproducible acquisition; then commit accepted data.
+
+Do not merge on the strength of a browser screenshot alone. Scientific and code review remain separate.
