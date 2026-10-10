@@ -22,6 +22,12 @@ function showSource(){
   $('source-status').textContent=s.access_status.replaceAll('-',' · ');
   $('source-information').innerHTML=`<div><b>Species:</b> ${escaped(s.species)}</div><div><b>Preparation:</b> ${escaped(s.preparation)}</div><div><b>Evidence:</b> ${escaped(s.signal_class)}</div><div><b>Licence:</b> ${escaped(s.licence)}</div><div><b>Review:</b> ${escaped(s.reuse_review)}</div><div><b>Calibration:</b> ${escaped(s.known_calibration)}</div><div><b>Limits:</b> ${escaped(s.caveats)}</div>`;
   $('source-link').href=s.source_url; $('show-historic').disabled=!s.image_url;
+  const chosen=s.id; $('lesson-content').textContent='Loading lesson…';
+  fetch('../experiments/'+encodeURIComponent(s.experiment_id)+'.json').then(r=>{if(!r.ok)throw Error('Lesson unavailable');return r.json()}).then(ex=>{
+    if($('source').value!==chosen)return;
+    const items=ex.tasks.map(t=>'<li>'+escaped(t)+'</li>').join('');
+    $('lesson-content').innerHTML='<p><strong>'+escaped(ex.title)+'</strong></p><ol>'+items+'</ol><p><strong>Limit:</strong> '+escaped(ex.interpretation_warning)+'</p>';
+  }).catch(e=>{if($('source').value===chosen)$('lesson-content').textContent=e.message});
 }
 function parseCSV(input){
   const lines=input.trim().split(/\r?\n/);
@@ -47,8 +53,8 @@ function loadWaveform(samples,{kind,name,unit}){
  state.samples=samples;state.kind=kind;state.originalName=name;state.yUnit=unit;
  state.base=null;state.cursors=[];state.nextCursor=0;state.invert=false;$('invert').checked=false;
  $('trace-name').textContent=`${name} · ${samples.length} samples`;
- const lab=$('truth-label');lab.textContent=kind==='SYNTHETIC'?'SYNTHETIC DEMONSTRATION — NOT BIOLOGICAL DATA':'USER-IMPORTED CSV — PROVENANCE NOT VERIFIED';
- $('historic').hidden=true;$('digital').hidden=false; $('hint').textContent=kind==='SYNTHETIC'?'Practice cursors and baseline on a mathematical demo; not experimental data.':'Imported data remain local. Confirm this file’s units and provenance before interpretation.';
+ const lab=$('truth-label');lab.textContent=kind==='SYNTHETIC'?'SYNTHETIC DEMONSTRATION — NOT BIOLOGICAL DATA':kind==='VERIFIED'?'VERIFIED ORIGINAL BIOLOGICAL DATA — PHYSIONET SGAMP EXCERPT':'USER-IMPORTED CSV — PROVENANCE NOT VERIFIED';
+ $('historic').hidden=true;$('digital').hidden=false; $('hint').textContent=kind==='SYNTHETIC'?'Practice cursors and baseline on a mathematical demo; not experimental data.':kind==='VERIFIED'?'Authentic PhysioNet a1t18 excerpt; source and excerpt SHA-256 documented. No filtering or automatic stimulus DC-offset correction.':'Imported data remain local. Confirm this file’s units and provenance before interpretation.';
  draw();updateMetrics();
 }
 async function loadDemo(){
@@ -56,6 +62,29 @@ async function loadDemo(){
  loadWaveform(parseCSV(await r.text()),{kind:'SYNTHETIC',name:'Synthetic twitch (interaction test)',unit:'arbitrary normalized units'});
  }catch(err){$('hint').textContent='Demo could not load: '+err.message;}
 }
+async function loadVerified(channel){
+  try{
+    if(!globalThis.crypto?.subtle)throw new Error('Secure browser context required for checksum verification (use localhost or HTTPS).');
+    const base='../examples/real/';
+    const manifestResponse=await fetch(base+'sgamp_a1t18_excerpt_manifest.json');
+    if(!manifestResponse.ok)throw Error('Source manifest unavailable');
+    const manifest=await manifestResponse.json();
+    if(manifest.data_class!=='VERIFIED_EXCERPT_FROM_AUTHENTIC_ORIGINAL'||manifest.record_id!=='a1t18'||manifest.source_doi!=='10.13026/C25C73')throw Error('Invalid source manifest');
+    const entry=manifest.channels[channel];if(!entry)throw Error('Requested channel absent');
+    const response=await fetch(base+entry.file);if(!response.ok)throw Error('Waveform excerpt unavailable');
+    const csv=await response.text();
+    const rawBytes=new TextEncoder().encode(csv);
+    const shaBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',rawBytes));
+    const sha=Array.from(shaBytes,b=>b.toString(16).padStart(2,'0')).join('');
+    if(sha!==entry.sha256)throw Error('Waveform SHA-256 mismatch: source NOT verified');
+    const samples=parseCSV(csv);
+    if(samples.length!==entry.sample_count||samples[0].t!==manifest.excerpt_time_ms[0]||samples[samples.length-1].t!==manifest.excerpt_time_ms[1])throw Error('Excerpt count or time-axis mismatch');
+    const source=$('source');if(Array.from(source.options).some(o=>o.value==='physionet-sgamp-2016')){source.value='physionet-sgamp-2016';showSource()}
+    loadWaveform(samples,{kind:'VERIFIED',name:'Squid axon a1t18 · '+channel+' · verified excerpt (992–1030 ms)',unit:entry.unit});
+  }catch(err){$('hint').textContent='VERIFIED DATA LOAD REJECTED: '+err.message}
+}
+$('real-vm').addEventListener('click',()=>loadVerified('Vmembrane'));
+$('real-stim').addEventListener('click',()=>loadVerified('Istim'));
 $('demo').addEventListener('click',loadDemo);
 $('show-historic').addEventListener('click',()=>{
  const s=catalog.find(x=>x.id===$('source').value);if(!s?.image_url)return;
