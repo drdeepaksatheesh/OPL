@@ -1,6 +1,6 @@
 # OPL Experimental Physiology — pilot staging branch
 
-**Status: pilot in review.** [Launch the standalone, dependency-free lab](lab.html) by downloading the HTML file, or view its source. The review branch includes a linked historical image viewer, an explicitly synthetic interactive demo, local CSV import, two cursors and source attribution. The more complete v0.2 local development bundle also contains teaching specifications, a metadata validator, a CSV ingestion script and tests. **No third-party raw waveform data are hosted here yet.**
+**Status: pilot in review.** [Launch the standalone, dependency-free lab](lab.html) by downloading the HTML file, or view its source. The review branch includes a linked historical image viewer, an explicitly synthetic interactive demo, local CSV import, two cursors and source attribution. The more complete v0.2 local development bundle also contains teaching specifications, a metadata validator, a CSV ingestion script and tests. **One verified real original-derived PhysioNet excerpt is already hosted in `examples/real/`; the complete original WFDB binary master is archived separately, not in Git.**
 
 ## Mission
 
@@ -46,3 +46,7 @@ Open [the browser lab](lab.html). Choose one of the frog-heart scans (2013, 2017
 - Remaining: acquire independently verified original binary master(s) and prove gain, scale, polarity and sample rate; complete rights review and reproducible acquisition; then commit accepted data.
 
 Do not merge on the strength of a browser screenshot alone. Scientific and code review remain separate.
+
+## v0.5 · synchronized original biological signals
+
+Open [the synchronized squid axon stimulus + membrane lab](web/synchronized.html) to inspect both source-derived channels on one time axis. The browser checks each CSV excerpt SHA-256, and a separate independent decoder `scripts/audit_sgamp.py` operates directly on the original WFDB binary. First pulse (>1 µA/cm²): 1000.016 ms; first positive Vm peak: 1001.160 ms; stimulus-to-peak interval: **1.144 ms**, *not* action-potential initiation. See [independent audit](docs/SGAMP_INDEPENDENT_AUDIT_v0.5.md). Scientific/teaching sign-off and unrestricted native Web Crypto E2E browser tests remain pending.
