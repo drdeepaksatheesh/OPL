@@ -25,4 +25,6 @@ jobs:
       - name: Test import, integrity and unsafe input rejection
         run: python3 -m unittest discover -s tests -v
       - name: Validate JavaScript parsing
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/synchronized.js
