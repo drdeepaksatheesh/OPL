@@ -1,0 +1,10 @@
+{
+  "id":"rat-cardiovascular","title":"Rat arterial pressure: variability and experimental context","domain":"Cardiovascular physiology","source_ids":["physionet-dahl-rat-2012"],
+  "goals":["Read a pressure-versus-time series using its documented units","Distinguish pulse pressure, mean pressure and measurement artifacts","Relate telemetric pressures to recording method and experimental conditions","Identify why telemetry data are not a substitute for an isolated frog-heart mechanical cardiogram"],
+  "sample_preparation":"Conscious Dahl salt-sensitive and congenic rats (source-reported telemetry)",
+  "minimum_channels":["blood pressure"],
+  "metadata_required":["pressure unit","sampling interval","strain","salt diet group","device","calibration and source version"],
+  "tasks":["Identify a short segment with a valid time base","Compute pulse interval only when waveform temporal resolution permits","Contrast spontaneous pressure waveform variability with a schematic demonstration"],
+  "interpretation_warning":"The source page contains conflicting licence language; no waveform has been mirrored. Dataset units and headers require record-specific checks before OPL release.",
+  "state":"external-recording-accessible-rights-pending"
+}

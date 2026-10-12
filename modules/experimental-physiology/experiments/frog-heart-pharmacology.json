@@ -1,0 +1,9 @@
+{
+  "id":"frog-heart-pharmacology","title":"Frog heart: cardiogram and drug responses","domain":"Cardiac physiology","source_ids":["commons-frog-heart-adrenaline-2013"],
+  "goals":["Interpret a historical cardiac mechanical recording in its original orientation","Identify beats and explain effects on rate and amplitude without assuming uncalibrated force","Distinguish electrical ECG from mechanical heart cardiogram","Consider lever attachment and inversion of upward or downward deflections"],
+  "sample_preparation":"Frog heart, exact preparation must be confirmed in each source", "minimum_channels":["mechanical displacement or tension"],
+  "metadata_required":["recording type","time base","lever/transducer attachment and sign convention","drug identity/dose/time","beat baseline"],
+  "tasks":["Annotate a baseline and two consecutive cardiac cycles","Identify the location and limitations of the adrenaline intervention","State why an upward deflection is not automatically ventricular systole without apparatus metadata"],
+  "interpretation_warning":"The historical Wikimedia scan's quantitative calibration is not established. No inverted cardiogram is manufactured to conform to a textbook convention.",
+  "state":"historical-scan-only"
+}

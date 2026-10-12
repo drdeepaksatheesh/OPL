@@ -1,0 +1,10 @@
+{
+  "id":"nerve-action-potential","title":"Nerve action potential: stimulus, membrane voltage and excitability","domain":"Neurophysiology","source_ids":["physionet-sgamp-2016","dandi-macaque-patchseq-001746"],
+  "goals":["Identify stimulus time and response onset in calibrated electrophysiology","Measure amplitude and latency from original units","Explain effects of membrane current stimulation","Compare types of electrophysiology preparation without conflating them"],
+  "sample_preparation":"Squid giant axon or macaque cortical slice: compare only with matched metadata",
+  "minimum_channels":["membrane voltage","stimulus current"],
+  "metadata_required":["sampling rate","electrical gain","applied current conversion","electrode configuration","recording direction and baseline"],
+  "tasks":["Convert an original stimulus-current channel using its published conversion factor","Measure response latency from the validated sampling frequency","Distinguish a spike from the stimulus artifact"],
+  "interpretation_warning":"A conversion script and independent tests must verify gains and physical units before a real record is released; current viewer is single-channel.",
+  "state":"external-raw-access-confirmed-not-yet-ingested"
+}

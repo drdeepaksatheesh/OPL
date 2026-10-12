@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Please cite the OPL repository release and the original data source separately; citing OPL does not replace dataset creator attribution."
+title: "OpenPhysiologyLab Experimental Physiology: Reference Lab Prototype"
+type: software
+authors:
+  - name: OpenPhysiologyLab contributors
+repository-code: "https://github.com/drdeepaksatheesh/OPL"
+license: GPL-3.0-only
+version: 0.1.0
+release-date: 2026-10-10

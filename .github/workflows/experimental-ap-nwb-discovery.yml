@@ -1,0 +1,62 @@
+name: Probe open raw rat intracellular NWB (research)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/experimental-ap-nwb-discovery.yml'
+      - 'modules/experimental-physiology/scripts/probe_dandi000025.py'
+      - 'modules/experimental-physiology/scripts/screen_dandi000025_ap.py'
+      - 'modules/experimental-physiology/scripts/screen_dandi000025_all.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  inspect-original-nwb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/experimental-physiology-v0.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy h5py scipy
+      - name: Regression test — multiple spikes riding on depolarized plateau
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from scipy.signal import find_peaks
+          rate=10000
+          t=np.arange(3000)/rate
+          v=np.where(t>0.05,0.0,-70.0)
+          for at in (0.08,0.12,0.16):
+              v+=43*np.exp(-((t-at)/0.001)**2)
+          peaks, props = find_peaks(v, height=-10, prominence=20, distance=int(rate*0.002))
+          assert len(peaks)==3, f"Must detect 3 genuine-looking spikes, got {len(peaks)}"
+          print("Pass: depolarized plateau with 3 peaks is not a single AP")
+          PY
+      - name: Check raw-file identity and acquisition series
+        run: python modules/experimental-physiology/scripts/probe_dandi000025.py
+      - name: Screen authentic APWaveform voltage and current sweeps
+        run: python modules/experimental-physiology/scripts/screen_dandi000025_ap.py
+      - name: Screen all original current-clamp protocols and audit near misses
+        run: python modules/experimental-physiology/scripts/screen_dandi000025_all.py
+      - name: Publish exploratory report (not a vetted teaching record)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules/experimental-physiology/research/DANDI000025*.json
+          if test -f modules/experimental-physiology/research/DANDI000025_review_only_best_single_spike.csv; then
+            git add -f modules/experimental-physiology/research/DANDI000025_review_only_best_single_spike.csv
+          fi
+          if ! git diff --cached --quiet; then
+            git commit -m "research: DANDI screened original spike + provenance [skip ci]"
+            git pull --rebase origin feature/experimental-physiology-v0.1
+            git push origin HEAD:feature/experimental-physiology-v0.1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exploratory-dandi-nwb-provenance
+          path: modules/experimental-physiology/research/DANDI000025*
+          retention-days: 30

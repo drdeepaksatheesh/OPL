@@ -1,0 +1,10 @@
+{
+  "id":"muscle-twitch-fatigue","title":"Skeletal muscle: twitch, summation, tetanus and fatigue","domain":"Neuromuscular physiology","source_ids":["marey-frog-fatigue-1892","virtual-frog-2008"],
+  "goals":["Separate a stimulus marker from mechanical contraction onset","Measure latent period, contraction phase and relaxation when both axes have a validated time base","Describe changes in twitch height and duration with stimulus history","Compare fatigue with incomplete and fused tetanus using original records"],
+  "sample_preparation":"Frog sciatic nerve–gastrocnemius or other explicitly specified preparation, depending on original dataset",
+  "minimum_channels":["force or displacement","stimulus timing (if available)"],
+  "metadata_required":["sample rate or time marks","force or displacement units","stimulus timing","recording polarity","preparation and temperature"],
+  "tasks":["Identify changes in peak magnitude between early and late contractions without inventing absolute force","Use a calibrated example to quantify onset latency","Explain why record orientation depends on the lever/transducer geometry","List two apparatus artifacts that could mimic fatigue"],
+  "interpretation_warning":"Marey's 1892 scanned image is a historical teaching plate, not calibrated numerical force data. Do not treat separation of successive printed curves as a modern amplitude scale.",
+  "state":"awaiting_first-calibrated-raw-recording"
+}

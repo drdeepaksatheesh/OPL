@@ -1,0 +1,23 @@
+{
+  "record_id": "DEMO-SYNTHETIC-TWITCH-v1",
+  "source_id": null,
+  "data_class": "SYNTHETIC",
+  "species": null,
+  "preparation": "not biological",
+  "time_unit": "ms",
+  "y_unit": "arbitrary normalized units",
+  "original_sha256": null,
+  "derived_sha256": "3c2e7d0ca57b09456b1967299ff8fd5c784ce65556943c136bd69ec79f06bee3",
+  "calibration": "none; synthetic values",
+  "time_origin": "demo local clock",
+  "signal_polarity": "positive upward",
+  "generator": "y=u*exp(1-u) for u=(time_ms-30)/56 and u>=0 else 0, sampled at 250 Hz",
+  "processing": [
+    "synthetic mathematical generation"
+  ],
+  "limitations": [
+    "NOT acquired from animal or human tissue",
+    "not calibrated force or displacement",
+    "not a source to cite for physiology findings"
+  ]
+}
