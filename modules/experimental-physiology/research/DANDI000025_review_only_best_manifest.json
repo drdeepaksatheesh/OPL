@@ -6,7 +6,7 @@
   "original_nwb_sha256": "1ee4844a99fe60c3603c9474d97e12d864eb19a75f851568ad2926385c770b5b",
   "derived_sha256": "55a0c384e7fbdc88682d4efde53aaef645c5aa2a157af32b77a6ae6608422505",
   "full_sweep_file": "DANDI000025_review_only_FULL_sweep.csv",
-  "full_sweep_sha256": "04466686dddb84da7b3ae3d2c4ac920d5c373b6052a0bc8c1d154b5854353f0d",
+  "full_sweep_sha256": "0f1e0a133a227491fa0e4fa8f4442bccffe398e33493a9407eb85920bb36aca7",
   "sampling_rate_hz": 10000.0,
   "units": [
     "ms",
