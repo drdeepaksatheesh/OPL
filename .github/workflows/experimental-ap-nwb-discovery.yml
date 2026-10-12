@@ -6,6 +6,7 @@ on:
       - '.github/workflows/experimental-ap-nwb-discovery.yml'
       - 'modules/experimental-physiology/scripts/probe_dandi000025.py'
       - 'modules/experimental-physiology/scripts/screen_dandi000025_ap.py'
+      - 'modules/experimental-physiology/scripts/screen_dandi000025_all.py'
   workflow_dispatch:
 permissions:
   contents: write
@@ -25,6 +26,8 @@ jobs:
         run: python modules/experimental-physiology/scripts/probe_dandi000025.py
       - name: Screen authentic APWaveform voltage and current sweeps
         run: python modules/experimental-physiology/scripts/screen_dandi000025_ap.py
+      - name: Screen all original current-clamp protocols and audit near misses
+        run: python modules/experimental-physiology/scripts/screen_dandi000025_all.py
       - name: Publish exploratory report (not a vetted teaching record)
         run: |
           git config user.name "github-actions[bot]"
