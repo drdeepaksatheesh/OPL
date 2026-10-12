@@ -3,7 +3,7 @@
 No artificial recentering, smoothing, clipping or simulated signal is allowed.
 All outputs are provisional and require an independent scientific review.
 """
-import hashlib,json,urllib.request,tempfile,csv
+import hashlib,json,urllib.request,tempfile,csv,shutil
 from pathlib import Path
 import h5py,numpy as np
 from scipy.signal import find_peaks
@@ -67,6 +67,11 @@ def main():
     O.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory() as t:
         nwb=Path(t)/"source.nwb";acquisition(nwb)
+        # Archive immutable original bytes in the downloadable Actions research artifact,
+        # never in ordinary Git history. The source SHA was checked by acquisition().
+        original=O/"DANDI000025_original_source_asset.nwb"
+        shutil.copyfile(nwb, original)
+        assert hashlib.sha256(original.read_bytes()).hexdigest()==SHA
         records=[];candidates=[];near_misses=[]
         with h5py.File(nwb,"r") as f:
             for s in sorted(f["acquisition"]):
