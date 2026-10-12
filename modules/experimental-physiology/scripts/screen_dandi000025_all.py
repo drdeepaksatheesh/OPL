@@ -109,10 +109,19 @@ def main():
                 wr.writerow(["time_ms","Vm_mV","injected_current_pA"])
                 for idx in range(start,end):
                     wr.writerow([f"{idx*1000/rate:.5f}",f"{vm[idx]:.6f}",f"{ci[idx]:.6f}"])
+            # Preserve the complete, time-aligned sweep for a separate scientific review artifact.
+            # This captures *stimulus offset and late recovery*, which a cropped spike omits.
+            fullpath=O/"DANDI000025_review_only_FULL_sweep.csv"
+            with fullpath.open("w",newline="") as out:
+                wr=csv.writer(out,lineterminator="\\n")
+                wr.writerow(["time_ms","Vm_mV","injected_current_pA"])
+                for idx in range(len(vm)):
+                    wr.writerow([f"{idx*1000/rate:.5f}",f"{vm[idx]:.6f}",f"{ci[idx]:.6f}"])
+            full_hash=hashlib.sha256(fullpath.read_bytes()).hexdigest()
             checksum=hashlib.sha256(fpath.read_bytes()).hexdigest()
             (O/"DANDI000025_review_only_best_manifest.json").write_text(json.dumps(dict(
                  status="NEAR_MISS_OR_CANDIDATE_NOT_EXPERT_ACCEPTED",measured_baseline_change_mV=r["baseline_change_mV"],recorded_from=name,stimulus=stim,
-                 original_nwb_sha256=SHA,derived_sha256=checksum,
+                 original_nwb_sha256=SHA,derived_sha256=checksum, full_sweep_file=fullpath.name, full_sweep_sha256=full_hash,
                  sampling_rate_hz=rate, units=["ms","mV","pA"],source_asset_id=ID,
                  excerpt_start_ms=round(start*1000/rate,5),excerpt_end_ms=round((end-1)*1000/rate,5),
                  source_notes="Unsmoothed raw sample values converted from NWB SI units; reviewer must approve before teaching."),indent=2)+"\n")
