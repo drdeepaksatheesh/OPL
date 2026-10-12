@@ -109,7 +109,7 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     sums=upstream_manifest()
-    record_names=get("RECORDS").decode().splitlines()
+    record_names=[x.strip().split("/")[-1] for x in get("RECORDS").decode().splitlines()]
     chosen=[x.strip() for x in record_names if re.fullmatch(r"a\dt\d+",x.strip()) and x.strip().startswith(args.prefix)][:args.limit]
     if not chosen: raise RuntimeError("No upstream records found")
     reports=[]
