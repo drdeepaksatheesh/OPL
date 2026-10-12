@@ -113,7 +113,7 @@ def main():
             # This captures *stimulus offset and late recovery*, which a cropped spike omits.
             fullpath=O/"DANDI000025_review_only_FULL_sweep.csv"
             with fullpath.open("w",newline="") as out:
-                wr=csv.writer(out,lineterminator="\\n")
+                wr=csv.writer(out,lineterminator="\n")
                 wr.writerow(["time_ms","Vm_mV","injected_current_pA"])
                 for idx in range(len(vm)):
                     wr.writerow([f"{idx*1000/rate:.5f}",f"{vm[idx]:.6f}",f"{ci[idx]:.6f}"])
