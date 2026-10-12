@@ -6,6 +6,7 @@ All outputs are provisional and require an independent scientific review.
 import hashlib,json,urllib.request,tempfile,csv
 from pathlib import Path
 import h5py,numpy as np
+from scipy.signal import find_peaks
 ID="b1364b47-71e1-4b04-b8e4-13aba7543406"
 SHA="1ee4844a99fe60c3603c9474d97e12d864eb19a75f851568ad2926385c770b5b"
 URL="https://api.dandiarchive.org/api/assets/"+ID+"/download/"
@@ -35,27 +36,32 @@ def screen(vm,current,rate=50000):
     late,late_sd=window(vm,duration-150,duration-50)
     i_pre,_=window(current,30,100)
     i_late,_=window(current,duration-150,duration-50)
+    # Detect EACH independent peak; voltage threshold *crossings* miss spikes on depolarized plateaus.
     threshold=max(-10,pre+38)
-    candidates=np.flatnonzero((vm[:-1]<threshold)&(vm[1:]>=threshold))+1
-    events=[]
-    for index in candidates:
-        if not events or index-events[-1]>int(rate*0.002):
-            events.append(int(index))
-    p_ms=[round(k*1000/rate,4) for k in events]
-    good=bool(len(events)==1 and 100< p_ms[0] < duration-200 and abs(pre-late)<3 and
-              pre_sd<2.5 and late_sd<2.5 and abs(i_late-i_pre)<20)
-    peak_idx = None
-    if events:
-        k=events[0];peak_idx=k+int(np.argmax(vm[k:min(len(vm),k+int(.003*rate))]))
+    peak_idx, peak_props=find_peaks(vm,height=threshold,prominence=20.0,
+                                  distance=max(2,int(rate*0.002)))
+    events=[int(x) for x in peak_idx]
+    p_ms=[round(k*1000/rate,5) for k in events]
+    onset=events[0]*1000/rate if events else None
+    # A short current injection must cease before a return-to-rest lesson can be accepted.
+    current_off_after=False
+    if onset is not None and onset+50<duration:
+        startoff=int((onset+20)*rate/1000)
+        endoff=int((onset+50)*rate/1000)
+        current_off_after=bool(abs(float(np.median(current[startoff:endoff]))-i_pre)<20)
+    stable=abs(late-pre)<=3 and late_sd<=2.5 and pre_sd<=2.5 and abs(i_late-i_pre)<=20
+    is_single=len(events)==1 and onset is not None and 100<onset<duration-200
+    good=bool(is_single and stable and current_off_after)
+    peak_idx_first=events[0] if events else None
     return dict(classification="screen_candidate_requires_expert_review" if good else "screen_rejected",
                 pre_mV=round(pre,5),post_mV=round(late,5),
                 baseline_change_mV=round(late-pre,5),pre_sd_mV=round(pre_sd,5),
                 post_sd_mV=round(late_sd,5),
                 pre_current_pA=round(i_pre,5),post_current_pA=round(i_late,5),
                 current_change_pA=round(i_late-i_pre,5),
-                spike_threshold_mV=round(threshold,4),spike_count=len(events),
-                spike_crossings_ms=p_ms[:12],first_peak_ms=(round(peak_idx*1000/rate,4) if peak_idx is not None else None),
-                first_peak_mV=(round(float(vm[peak_idx]),4) if peak_idx is not None else None),
+                spike_threshold_mV=round(threshold,4),spike_count=len(events),current_off_20_to_50ms_after_first_peak=current_off_after,
+                spike_crossings_ms=p_ms[:12],first_peak_ms=(round(peak_idx_first*1000/rate,4) if peak_idx_first is not None else None),
+                first_peak_mV=(round(float(vm[peak_idx_first]),4) if peak_idx_first is not None else None),
                 duration_ms=round(duration,4))
 def main():
     O.mkdir(parents=True,exist_ok=True)
