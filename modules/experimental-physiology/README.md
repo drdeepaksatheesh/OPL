@@ -1,6 +1,6 @@
 # OPL Experimental Physiology — pilot staging branch
 
-**Status: pilot in review.** [Launch the standalone, dependency-free lab](lab.html) by downloading the HTML file, or view its source. The review branch includes a linked historical image viewer, an explicitly synthetic interactive demo, local CSV import, two cursors and source attribution. The more complete v0.2 local development bundle also contains teaching specifications, a metadata validator, a CSV ingestion script and tests. **One verified real original-derived PhysioNet excerpt is already hosted in `examples/real/`; the complete original WFDB binary master is archived separately, not in Git.**
+**Status: v0.5 scientific pilot in draft review.** [Launch the standalone, dependency-free lab](lab.html) by downloading the HTML file, or view its source. The review branch includes a linked historical image viewer, an explicitly synthetic interactive demo, local CSV import, two cursors and source attribution. The current branch includes teaching specifications, original-source-derived SGAMP waveform excerpts, a synchronized two-channel viewer and an independent WFDB analysis script. **One verified real original-derived PhysioNet excerpt is already hosted in `examples/real/`; the complete original WFDB binary master is archived separately, not in Git.**
 
 ## Mission
 
@@ -39,11 +39,11 @@ Code inherits the parent OPL GPL-3.0 project licence; third-party data retain th
 
 Open [the browser lab](lab.html). Choose one of the frog-heart scans (2013, 2017) or the historical Marey frog-muscle figure (1892); select "View original image". These images are displayed from Wikimedia Commons with inline attribution. The physical force and time calibration of these scans is **unverified**; zoom is display magnification only. The numerical caliper demonstration is labelled **synthetic**; imported CSV is labelled **unverified**.
 
-## v0.2 review milestones
+## Earlier v0.2 milestones (historical)
 
 - Standalone HTML learner on the review branch with no third-party code dependency or telemetry.
 - Detailed local build has 8 source records and 5 mapped exercises, 5 passing ingestion tests, a verified desktop/mobile layout under controlled headless-browser testing, and image-linked sources.
-- Remaining: acquire independently verified original binary master(s) and prove gain, scale, polarity and sample rate; complete rights review and reproducible acquisition; then commit accepted data.
+- The original SGAMP a1t18 has now been acquired, source-hashed and independently decoded; real excerpts are committed. Remaining: outside physiological review, unrestricted native Web Crypto E2E and figure-specific rights reviews.
 
 Do not merge on the strength of a browser screenshot alone. Scientific and code review remain separate.
 
